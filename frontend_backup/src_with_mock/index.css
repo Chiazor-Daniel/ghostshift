@@ -1,0 +1,215 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-surface: 248 250 252;
+    --color-surface-dim: 233 238 244;
+    --color-surface-bright: 255 255 255;
+    --color-surface-container-lowest: 255 255 255;
+    --color-surface-container-low: 241 245 249;
+    --color-surface-container: 233 238 244;
+    --color-surface-container-high: 226 232 240;
+    --color-surface-container-highest: 203 213 225;
+    --color-on-surface: 15 23 42;
+    --color-on-surface-variant: 71 85 105;
+    --color-inverse-surface: 30 41 59;
+    --color-inverse-on-surface: 241 245 249;
+    --color-outline: 148 163 184;
+    --color-outline-variant: 203 213 225;
+    --color-background: 233 238 244;
+    --color-surface-variant: 226 232 240;
+    --color-primary-container: 219 234 254;
+    --color-on-primary-container: 30 58 138;
+    --color-on-primary: 255 255 255;
+    --color-secondary-container: 226 232 240;
+    --color-on-secondary-container: 51 65 85;
+    --color-tertiary-container: 226 232 240;
+    --color-on-tertiary-container: 51 65 85;
+    --color-error-container: 254 226 226;
+    --color-on-error-container: 127 29 29;
+    --color-warning-container: 254 243 199;
+    --color-on-warning-container: 120 53 15;
+    --color-success-container: 209 250 229;
+    --color-on-success-container: 6 78 59;
+    --color-info-container: 219 234 254;
+    --color-on-info-container: 30 58 138;
+  }
+
+  .dark {
+    --color-surface: 30 41 59;
+    --color-surface-dim: 15 23 42;
+    --color-surface-bright: 51 65 85;
+    --color-surface-container-lowest: 15 23 42;
+    --color-surface-container-low: 30 41 59;
+    --color-surface-container: 30 41 59;
+    --color-surface-container-high: 51 65 85;
+    --color-surface-container-highest: 71 85 105;
+    --color-on-surface: 241 245 249;
+    --color-on-surface-variant: 148 163 184;
+    --color-inverse-surface: 241 245 249;
+    --color-inverse-on-surface: 15 23 42;
+    --color-outline: 71 85 105;
+    --color-outline-variant: 51 65 85;
+    --color-background: 15 23 42;
+    --color-surface-variant: 51 65 85;
+    --color-primary-container: 30 58 138;
+    --color-on-primary-container: 219 234 254;
+    --color-on-primary: 255 255 255;
+    --color-secondary-container: 71 85 105;
+    --color-on-secondary-container: 226 232 240;
+    --color-tertiary-container: 71 85 105;
+    --color-on-tertiary-container: 226 232 240;
+    --color-error-container: 127 29 29;
+    --color-on-error-container: 254 226 226;
+    --color-warning-container: 120 53 15;
+    --color-on-warning-container: 254 243 199;
+    --color-success-container: 6 78 59;
+    --color-on-success-container: 209 250 229;
+    --color-info-container: 30 58 138;
+    --color-on-info-container: 219 234 254;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+    scrollbar-gutter: stable;
+  }
+  body {
+    @apply text-on-surface font-body-md min-h-screen;
+  }
+  #root {
+    background: linear-gradient(135deg, #f1f5f9 0%, #e9eef4 50%, #e2e8f0 100%);
+    min-height: 100vh;
+  }
+  .dark #root {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+  }
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+  :where(button, a, [role="button"], input, select, textarea):focus-visible {
+    @apply outline-none ring-2 ring-primary/40 ring-offset-2 ring-offset-surface;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-gradient-to-b from-surface to-surface-dim rounded-2xl shadow-soft-md;
+  }
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-soft-xl hover:-translate-y-0.5;
+  }
+  .card-border {
+    @apply border border-outline-variant/60;
+  }
+
+  .animated-gradient {
+    background: linear-gradient(120deg, #f8fafc 0%, #eff6ff 30%, #f8fafc 65%, #e0f2fe 100%);
+    background-size: 220% 220%;
+    animation: gradient-shift 18s ease infinite;
+  }
+  .drag-pattern {
+    background-image: radial-gradient(rgba(100, 116, 139, 0.16) 1px, transparent 1px);
+    background-size: 14px 14px;
+  }
+  .grid-pattern {
+    background-image: linear-gradient(rgba(37, 99, 235, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(37, 99, 235, 0.06) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .noise::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.02;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgba(148, 163, 184, 0.4);
+    border-radius: 9999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(148, 163, 184, 0.7);
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-sm rounded-xl bg-gradient-to-b from-primary-500 to-primary-700 px-lg py-sm text-label-md font-semibold text-on-primary shadow-soft-md transition-all hover:from-primary-600 hover:to-primary-800 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-sm rounded-xl border border-outline-variant/70 bg-surface px-lg py-sm text-label-md font-medium text-on-surface transition-all hover:bg-surface-container hover:border-outline active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-sm rounded-xl px-md py-sm text-label-md font-medium text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-sm rounded-xl border border-error/30 bg-error/5 px-lg py-sm text-label-md font-medium text-error transition-all hover:bg-error/10 active:scale-[0.98];
+  }
+  .btn-icon {
+    @apply inline-flex items-center justify-center w-11 h-11 rounded-xl text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface active:scale-[0.96] disabled:opacity-40 disabled:pointer-events-none;
+  }
+  .btn-icon-sm {
+    @apply inline-flex items-center justify-center w-9 h-9 rounded-lg text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface active:scale-[0.96];
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-label-sm font-medium;
+  }
+
+  .input-base {
+    @apply w-full rounded-xl border border-outline-variant/70 bg-surface px-md py-sm text-body-sm text-on-surface placeholder:text-on-surface-variant/55 transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-surface-container disabled:text-on-surface-variant;
+  }
+
+  .page-container {
+    @apply px-4 md:px-6 lg:px-8 xl:px-10 max-w-[1600px] mx-auto w-full;
+  }
+
+  .page-section {
+    @apply pt-6 pb-10 space-y-6;
+  }
+
+  .responsive-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5;
+  }
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
+  font-feature-settings: 'liga';
+}
+.material-symbols-outlined.fill {
+  font-variation-settings: 'FILL' 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
