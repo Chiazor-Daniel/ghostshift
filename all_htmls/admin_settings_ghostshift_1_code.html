@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>GhostShift Admin Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#e0e3e5",
+                        "secondary-fixed": "#dae2fd",
+                        "primary-container": "#6063ee",
+                        "on-primary-container": "#fffbff",
+                        "on-background": "#0b1c30",
+                        "inverse-surface": "#213145",
+                        "surface-container": "#e5eeff",
+                        "tertiary-container": "#727577",
+                        "on-tertiary": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "surface-container-high": "#dce9ff",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-primary": "#c0c1ff",
+                        "error-container": "#ffdad6",
+                        "inverse-on-surface": "#eaf1ff",
+                        "surface": "#f8f9ff",
+                        "surface-tint": "#494bd6",
+                        "primary-fixed": "#e1e0ff",
+                        "error": "#ba1a1a",
+                        "on-tertiary-container": "#fbfdff",
+                        "surface-dim": "#cbdbf5",
+                        "outline-variant": "#c7c4d7",
+                        "on-surface": "#0b1c30",
+                        "on-secondary": "#ffffff",
+                        "surface-container-low": "#eff4ff",
+                        "on-primary-fixed-variant": "#2f2ebe",
+                        "primary-fixed-dim": "#c0c1ff",
+                        "secondary-fixed-dim": "#bec6e0",
+                        "on-secondary-fixed": "#131b2e",
+                        "primary": "#4648d4",
+                        "surface-bright": "#f8f9ff",
+                        "tertiary": "#595c5e",
+                        "secondary": "#565e74",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#c4c7c9",
+                        "surface-variant": "#d3e4fe",
+                        "on-surface-variant": "#464554",
+                        "on-secondary-container": "#5c647a",
+                        "secondary-container": "#dae2fd",
+                        "background": "#f8f9ff",
+                        "surface-container-highest": "#d3e4fe",
+                        "on-secondary-fixed-variant": "#3f465c",
+                        "on-tertiary-fixed": "#191c1e",
+                        "on-primary-fixed": "#07006c",
+                        "on-tertiary-fixed-variant": "#444749",
+                        "on-error-container": "#93000a",
+                        "outline": "#767586"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xl": "48px",
+                        "md": "16px",
+                        "lg": "24px",
+                        "container-max": "1440px",
+                        "sm": "8px",
+                        "gutter": "24px",
+                        "xs": "4px",
+                        "base": "4px"
+                    },
+                    "fontFamily": {
+                        "label-md": ["Geist"],
+                        "display-lg": ["Geist"],
+                        "body-md": ["Inter"],
+                        "headline-lg": ["Geist"],
+                        "label-sm": ["Geist"],
+                        "headline-lg-mobile": ["Geist"],
+                        "body-lg": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "headline-md": ["Geist"]
+                    },
+                    "fontSize": {
+                        "label-md": ["14px", {"lineHeight": "1.0", "letterSpacing": "0.01em", "fontWeight": "500"}],
+                        "display-lg": ["48px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                        "headline-lg": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "label-sm": ["12px", {"lineHeight": "1.0", "fontWeight": "500"}],
+                        "headline-lg-mobile": ["24px", {"lineHeight": "1.2", "fontWeight": "600"}],
+                        "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "body-sm": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                        "headline-md": ["24px", {"lineHeight": "1.3", "fontWeight": "500"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        /* Custom range slider styling for Vercel-like aesthetic */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #ffffff;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 0 1px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.1);
+            transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #d3e4fe; /* surface-variant */
+            border-radius: 2px;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        /* Gradient track fill handled via inline style dynamically if needed, but keeping it simple for CSS */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-md antialiased overflow-x-hidden min-h-screen flex">
+<!-- SideNavBar (Shared Component) -->
+<nav class="bg-white/80 dark:bg-on-background/80 backdrop-blur-xl fixed left-0 top-0 h-full w-[240px] border-r border-surface-variant/30 shadow-sm flex flex-col h-screen p-md z-50">
+<!-- Header -->
+<div class="flex items-center gap-sm mb-xl px-sm pt-sm">
+<div class="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center font-headline-md font-bold">
+                G
+            </div>
+<div>
+<h1 class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed">GhostShift</h1>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Enterprise Suite</p>
+</div>
+</div>
+<!-- Main Navigation -->
+<ul class="flex flex-col gap-xs flex-1">
+<li>
+<a class="flex items-center gap-sm px-md py-sm rounded-lg text-secondary dark:text-secondary-fixed-dim hover:text-primary hover:bg-surface-container-low/50 dark:hover:bg-on-surface-variant/10 transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">dashboard</span>
+<span class="font-label-md text-label-md">Manager Dashboard</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-sm px-md py-sm rounded-lg text-secondary dark:text-secondary-fixed-dim hover:text-primary hover:bg-surface-container-low/50 dark:hover:bg-on-surface-variant/10 transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">person_check</span>
+<span class="font-label-md text-label-md">Employee Hub</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-sm px-md py-sm rounded-lg text-secondary dark:text-secondary-fixed-dim hover:text-primary hover:bg-surface-container-low/50 dark:hover:bg-on-surface-variant/10 transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">vitals</span>
+<span class="font-label-md text-label-md">Health Analytics</span>
+</a>
+</li>
+<!-- Active Tab -->
+<li>
+<a class="flex items-center gap-sm px-md py-sm rounded-lg text-primary dark:text-primary-fixed font-bold border-r-2 border-primary bg-surface-container-low/30 hover:bg-surface-container-low/50 transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">settings_applications</span>
+<span class="font-label-md text-label-md">Org Settings</span>
+</a>
+</li>
+</ul>
+<!-- CTA -->
+<div class="mt-auto mb-md px-sm">
+<button class="w-full bg-primary text-on-primary font-label-md text-label-md py-sm rounded-lg hover:bg-surface-tint transition-colors duration-200 shadow-sm flex items-center justify-center gap-xs">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                New Shift
+            </button>
+</div>
+<!-- Footer Navigation -->
+<ul class="flex flex-col gap-xs border-t border-surface-variant/30 pt-md">
+<li>
+<a class="flex items-center gap-sm px-md py-sm rounded-lg text-secondary dark:text-secondary-fixed-dim hover:text-primary hover:bg-surface-container-low/50 transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+<span class="font-label-md text-label-md">Notifications</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-sm px-md py-sm rounded-lg text-secondary dark:text-secondary-fixed-dim hover:text-primary hover:bg-surface-container-low/50 transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined text-[20px]">help_outline</span>
+<span class="font-label-md text-label-md">Support</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- Main Content Wrapper -->
+<div class="flex-1 ml-[240px] flex flex-col min-h-screen">
+<!-- TopNavBar (Shared Component) -->
+<header class="bg-surface/80 dark:bg-on-background/80 backdrop-blur-md docked full-width top-0 sticky z-40 border-b border-surface-variant/20 shadow-none flex justify-between items-center w-full px-xl py-sm">
+<!-- Left: Search (Implicit from search_bar: on_left, though generic layout needed) -->
+<div class="flex items-center gap-lg">
+<div class="relative hidden lg:block">
+<span class="material-symbols-outlined absolute left-sm top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+<input class="pl-xl pr-md py-xs rounded-full bg-surface-container-low border border-surface-variant focus:border-primary focus:ring-1 focus:ring-primary outline-none font-body-sm text-body-sm text-on-surface w-[240px] transition-all" placeholder="Search organization..." type="text"/>
+</div>
+<!-- Navigation Links -->
+<nav class="hidden md:flex items-center gap-lg">
+<a class="font-body-sm text-body-sm text-on-surface-variant dark:text-on-secondary-container hover:text-primary dark:hover:text-primary-fixed transition-all scale-95 active:scale-90" href="#">Schedules</a>
+<a class="font-body-sm text-body-sm text-on-surface-variant dark:text-on-secondary-container hover:text-primary dark:hover:text-primary-fixed transition-all scale-95 active:scale-90" href="#">Marketplace</a>
+<a class="font-body-sm text-body-sm text-on-surface-variant dark:text-on-secondary-container hover:text-primary dark:hover:text-primary-fixed transition-all scale-95 active:scale-90" href="#">Analytics</a>
+</nav>
+</div>
+<!-- Right: Actions & Profile -->
+<div class="flex items-center gap-md">
+<button class="text-on-surface-variant hover:text-primary transition-colors p-xs rounded-full hover:bg-surface-container-low">
+<span class="material-symbols-outlined">bolt</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors p-xs rounded-full hover:bg-surface-container-low">
+<span class="material-symbols-outlined">history</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant cursor-pointer ml-sm">
+<img alt="User Profile" class="w-full h-full object-cover" data-alt="A minimal, professional avatar placeholder showing a subtle silhouette of a person against a clean slate-gray background, modern web application style, low detail." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAg5Tmkw_U6a-ThLGI0VZKcdMArZWyiZpIUSJISp_ZY8MyhB_NWwbjtf9upHvRqe1A82n3aoKSQvuusZofJHoWtagTjHE5W7TnyoYDA6skNTdqAmy1TcW5etwNbr6FVYo5gS0A1AB0AiO6Z5o3bgog7pukEfphX7NjmJBh7Stl7GlnlsLgOE1wyqGlWeMQt-qm53ypM4mkX6u7FKoAALPKZk2VO20qy1oB3CbXnBtMHo24HUKVLyUrCfouEkv0vpbbl6JRHMOEmIMA"/>
+</div>
+</div>
+</header>
+<!-- Page Canvas -->
+<main class="flex-1 p-xl max-w-container-max mx-auto w-full">
+<!-- Page Header -->
+<div class="mb-lg">
+<h2 class="font-headline-lg text-headline-lg text-on-surface mb-xs">Organization Management</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Configure global parameters, AI inference behaviors, and structural hierarchies.</p>
+</div>
+<!-- System Health Status Cards -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-md mb-lg">
+<div class="bg-surface border border-outline-variant rounded-xl p-md flex items-center justify-between shadow-sm">
+<div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Engine Status</p>
+<div class="flex items-center gap-sm">
+<div class="w-2 h-2 rounded-full bg-[#10b981]"></div>
+<span class="font-headline-md text-headline-md font-medium text-on-surface">Operational</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline text-[32px] opacity-20">memory</span>
+</div>
+<div class="bg-surface border border-outline-variant rounded-xl p-md flex items-center justify-between shadow-sm">
+<div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Avg Inference Latency</p>
+<div class="flex items-baseline gap-xs">
+<span class="font-headline-md text-headline-md font-medium text-on-surface">124</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">ms</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline text-[32px] opacity-20">speed</span>
+</div>
+<div class="bg-surface border border-outline-variant rounded-xl p-md flex items-center justify-between shadow-sm">
+<div>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-xs">Active Syncs</p>
+<div class="flex items-baseline gap-xs">
+<span class="font-headline-md text-headline-md font-medium text-on-surface">3,402</span>
+<span class="font-body-sm text-body-sm text-primary flex items-center"><span class="material-symbols-outlined text-[14px]">arrow_upward</span> 12%</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline text-[32px] opacity-20">sync_alt</span>
+</div>
+</div>
+<!-- Bento Grid Layout for Main Content -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-lg">
+<!-- Left Column (AI Tuning & Settings) -->
+<div class="lg:col-span-8 flex flex-col gap-lg">
+<!-- AI Tuning Section -->
+<section class="bg-surface border border-outline-variant rounded-xl p-lg shadow-sm relative overflow-hidden">
+<!-- Decorative subtle gradient background -->
+<div class="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+<div class="flex items-center gap-sm mb-lg relative z-10">
+<div class="p-xs bg-surface-container-low rounded-lg text-primary">
+<span class="material-symbols-outlined">tune</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface">AI Tuning Engine</h3>
+</div>
+<div class="space-y-xl relative z-10">
+<!-- Slider 1 -->
+<div>
+<div class="flex justify-between items-end mb-sm">
+<div>
+<label class="font-label-md text-label-md text-on-surface block mb-xs">Scheduling Aggression</label>
+<p class="font-body-sm text-body-sm text-on-surface-variant max-w-md">Determines how tightly shifts are packed. Higher values prioritize coverage over buffer time.</p>
+</div>
+<span class="font-label-md text-label-md text-primary bg-surface-container-low px-sm py-xs rounded-md">High (0.85)</span>
+</div>
+<input class="w-full" max="100" min="0" type="range" value="85"/>
+<div class="flex justify-between mt-xs font-label-sm text-label-sm text-outline">
+<span>Relaxed</span>
+<span>Aggressive</span>
+</div>
+</div>
+<!-- Slider 2 -->
+<div>
+<div class="flex justify-between items-end mb-sm">
+<div>
+<label class="font-label-md text-label-md text-on-surface block mb-xs">Burnout Threshold <span class="w-2 h-2 rounded-full bg-error inline-block ml-xs animate-pulse"></span></label>
+<p class="font-body-sm text-body-sm text-on-surface-variant max-w-md">Sensitivity to consecutive long shifts. Lower values flag risks earlier.</p>
+</div>
+<span class="font-label-md text-label-md text-on-surface border border-outline-variant px-sm py-xs rounded-md">Moderate (0.40)</span>
+</div>
+<input class="w-full" max="100" min="0" type="range" value="40"/>
+<div class="flex justify-between mt-xs font-label-sm text-label-sm text-outline">
+<span>Strict</span>
+<span>Lenient</span>
+</div>
+</div>
+<!-- Slider 3 -->
+<div>
+<div class="flex justify-between items-end mb-sm">
+<div>
+<label class="font-label-md text-label-md text-on-surface block mb-xs">Fairness Weight</label>
+<p class="font-body-sm text-body-sm text-on-surface-variant max-w-md">Priority given to distributing unpopular shifts evenly across the workforce.</p>
+</div>
+<span class="font-label-md text-label-md text-on-surface border border-outline-variant px-sm py-xs rounded-md">Balanced (0.60)</span>
+</div>
+<input class="w-full" max="100" min="0" type="range" value="60"/>
+<div class="flex justify-between mt-xs font-label-sm text-label-sm text-outline">
+<span>Operational Efficiency</span>
+<span>Strict Parity</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Global Organization Controls -->
+<section class="bg-surface border border-outline-variant rounded-xl p-lg shadow-sm">
+<h3 class="font-headline-md text-headline-md text-on-surface mb-lg">Global Parameters</h3>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+<!-- Setting Toggle 1 -->
+<div class="flex items-start justify-between p-md border border-surface-variant rounded-lg hover:bg-surface-container-low/30 transition-colors">
+<div>
+<p class="font-label-md text-label-md text-on-surface">Auto-Approve Swaps</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-xs">Allow peer-to-peer shift swaps without manager intervention if rules pass.</p>
+</div>
+<!-- Toggle Switch (Visual representation) -->
+<div class="w-10 h-6 bg-primary rounded-full relative cursor-pointer ml-sm shrink-0">
+<div class="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm"></div>
+</div>
+</div>
+<!-- Setting Toggle 2 -->
+<div class="flex items-start justify-between p-md border border-surface-variant rounded-lg hover:bg-surface-container-low/30 transition-colors">
+<div>
+<p class="font-label-md text-label-md text-on-surface">Strict Compliance Mode</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-xs">Enforce hard stops on scheduling actions that violate labor laws.</p>
+</div>
+<div class="w-10 h-6 bg-surface-variant rounded-full relative cursor-pointer ml-sm shrink-0 border border-outline-variant">
+<div class="absolute left-1 top-[3px] w-4 h-4 bg-white rounded-full shadow-sm"></div>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Right Column (Hierarchy List) -->
+<div class="lg:col-span-4">
+<section class="bg-surface border border-outline-variant rounded-xl p-lg shadow-sm h-full flex flex-col">
+<div class="flex items-center justify-between mb-md">
+<h3 class="font-headline-md text-headline-md text-on-surface">Department Hierarchy</h3>
+<button class="text-primary hover:text-surface-tint p-xs rounded-full hover:bg-surface-container-low transition-colors">
+<span class="material-symbols-outlined text-[20px]">add</span>
+</button>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-lg">Structural mapping for inherited scheduling policies.</p>
+<!-- Tree View -->
+<div class="flex-1 overflow-y-auto pr-sm -mr-sm">
+<ul class="space-y-sm font-body-sm text-body-sm">
+<!-- Root Node -->
+<li>
+<div class="flex items-center gap-sm p-xs rounded hover:bg-surface-container-low cursor-pointer group">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant group-hover:text-primary transition-colors">expand_more</span>
+<span class="material-symbols-outlined text-[18px] text-outline">domain</span>
+<span class="font-label-md text-label-md text-on-surface">Global Operations</span>
+</div>
+<!-- Level 1 -->
+<ul class="ml-[22px] border-l border-surface-variant/50 pl-md mt-xs space-y-xs">
+<li>
+<div class="flex items-center gap-sm p-xs rounded hover:bg-surface-container-low cursor-pointer group">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant group-hover:text-primary transition-colors">chevron_right</span>
+<span class="material-symbols-outlined text-[18px] text-outline">local_hospital</span>
+<span class="text-on-surface">Clinical Staff</span>
+</div>
+</li>
+<li>
+<div class="flex items-center gap-sm p-xs rounded bg-surface-container-low cursor-pointer group border-l-2 border-primary -ml-[17px] pl-[15px]">
+<span class="material-symbols-outlined text-[18px] text-primary transition-colors">expand_more</span>
+<span class="material-symbols-outlined text-[18px] text-primary">support_agent</span>
+<span class="text-on-surface font-medium">Support Center</span>
+</div>
+<!-- Level 2 (Expanded) -->
+<ul class="ml-[22px] border-l border-surface-variant/50 pl-md mt-xs space-y-xs">
+<li>
+<div class="flex items-center gap-sm p-xs rounded hover:bg-surface-container-low cursor-pointer group">
+<span class="w-[18px]"></span> <!-- Spacer -->
+<span class="material-symbols-outlined text-[18px] text-outline">headset_mic</span>
+<span class="text-on-surface-variant group-hover:text-on-surface transition-colors">Tier 1 Support</span>
+<span class="ml-auto font-label-sm text-label-sm text-outline bg-surface-variant px-xs rounded">142</span>
+</div>
+</li>
+<li>
+<div class="flex items-center gap-sm p-xs rounded hover:bg-surface-container-low cursor-pointer group">
+<span class="w-[18px]"></span> <!-- Spacer -->
+<span class="material-symbols-outlined text-[18px] text-outline">engineering</span>
+<span class="text-on-surface-variant group-hover:text-on-surface transition-colors">Escalations</span>
+<span class="ml-auto font-label-sm text-label-sm text-outline bg-surface-variant px-xs rounded">38</span>
+</div>
+</li>
+</ul>
+</li>
+<li>
+<div class="flex items-center gap-sm p-xs rounded hover:bg-surface-container-low cursor-pointer group">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant group-hover:text-primary transition-colors">chevron_right</span>
+<span class="material-symbols-outlined text-[18px] text-outline">inventory_2</span>
+<span class="text-on-surface">Logistics</span>
+</div>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+</div>
+</div>
+</main>
+</div>
+</body></html>

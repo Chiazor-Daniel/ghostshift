@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Shift Marketplace - GhostShift</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800;900&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-tint": "#494bd6",
+                      "secondary-fixed": "#dae2fd",
+                      "surface-dim": "#cbdbf5",
+                      "surface-container-high": "#dce9ff",
+                      "on-primary-fixed-variant": "#2f2ebe",
+                      "on-tertiary-fixed": "#191c1e",
+                      "on-error": "#ffffff",
+                      "error": "#ba1a1a",
+                      "outline-variant": "#c7c4d7",
+                      "on-secondary-container": "#5c647a",
+                      "on-primary": "#ffffff",
+                      "surface-container-lowest": "#ffffff",
+                      "surface-container-highest": "#d3e4fe",
+                      "surface-container": "#e5eeff",
+                      "tertiary-container": "#727577",
+                      "inverse-surface": "#213145",
+                      "tertiary-fixed": "#e0e3e5",
+                      "inverse-primary": "#c0c1ff",
+                      "error-container": "#ffdad6",
+                      "primary-fixed-dim": "#c0c1ff",
+                      "primary-container": "#6063ee",
+                      "tertiary-fixed-dim": "#c4c7c9",
+                      "on-surface-variant": "#464554",
+                      "surface-container-low": "#eff4ff",
+                      "on-tertiary-container": "#fbfdff",
+                      "on-secondary-fixed": "#131b2e",
+                      "on-error-container": "#93000a",
+                      "background": "#f8f9ff",
+                      "surface-variant": "#d3e4fe",
+                      "inverse-on-surface": "#eaf1ff",
+                      "primary-fixed": "#e1e0ff",
+                      "surface-bright": "#f8f9ff",
+                      "on-primary-fixed": "#07006c",
+                      "on-tertiary": "#ffffff",
+                      "on-surface": "#0b1c30",
+                      "on-primary-container": "#fffbff",
+                      "on-secondary": "#ffffff",
+                      "primary": "#4648d4",
+                      "secondary": "#565e74",
+                      "outline": "#767586",
+                      "on-background": "#0b1c30",
+                      "surface": "#f8f9ff",
+                      "on-secondary-fixed-variant": "#3f465c",
+                      "secondary-fixed-dim": "#bec6e0",
+                      "tertiary": "#595c5e",
+                      "secondary-container": "#dae2fd",
+                      "on-tertiary-fixed-variant": "#444749"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "xs": "4px",
+                      "container-max": "1440px",
+                      "base": "4px",
+                      "sm": "8px",
+                      "md": "16px",
+                      "xl": "48px",
+                      "lg": "24px",
+                      "gutter": "24px"
+              },
+              "fontFamily": {
+                      "headline-md": [
+                              "Geist"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "label-md": [
+                              "Geist"
+                      ],
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "label-sm": [
+                              "Geist"
+                      ],
+                      "display-lg": [
+                              "Geist"
+                      ],
+                      "headline-lg-mobile": [
+                              "Geist"
+                      ],
+                      "body-lg": [
+                              "Inter"
+                      ],
+                      "headline-lg": [
+                              "Geist"
+                      ]
+              },
+              "fontSize": {
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.3",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "1.0",
+                                      "letterSpacing": "0.01em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "body-sm": [
+                              "14px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "1.0",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "display-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "24px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "1.6",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+      </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md min-h-screen pb-24">
+<!-- Top Navigation (Mobile Friendly) -->
+<header class="bg-surface/80 dark:bg-on-background/80 backdrop-blur-md sticky z-40 full-width top-0 shadow-none border-b border-surface-variant/20 flex justify-between items-center w-full px-md py-sm">
+<div class="flex items-center gap-sm">
+<img alt="GhostShift Logo" class="w-8 h-8 rounded-full" data-alt="A clean, minimalist logo mark featuring a stylized geometric shape in deep indigo and white, representing enterprise efficiency and modern SaaS aesthetics." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJves5WE0xaZDX4K9kOiY0vG346SrgiIOFV02T-mXUWGvF5_PHZcMCPi5VtYOgD_0D5-VLfhJBNvfa--_o3b4Vs2vxDGigug41u5UgvCYObKbKhmwHWGrZ8OtTQw2oK0pcXkD2-7mgvtptZ179mI3gWlL26l-7bWYt1rchN35D4JGFqlx-B08hRlyHGUNpHS0uUdoF9QlUtc2TLa6NoGxyXS1cPTBrm4uLb4QMN2aNMbEYHmeuAcrPVbWWPLc0tacAwyIegE0r6JE"/>
+<span class="font-headline-md text-headline-md font-black text-on-surface">GhostShift</span>
+</div>
+<div class="flex items-center gap-sm">
+<button class="p-2 text-primary hover:bg-surface-container-low/50 rounded-full transition-colors scale-95 active:scale-90">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+</button>
+<button class="p-2 text-primary hover:bg-surface-container-low/50 rounded-full transition-colors scale-95 active:scale-90 relative">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full border border-surface"></span>
+</button>
+<img alt="User Profile" class="w-8 h-8 rounded-full object-cover ml-2 border border-surface-variant/30" data-alt="A professional headshot of a healthcare worker in scrubs, smiling slightly, set against a soft, bright clinical background, conveying competence and calm." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDVDh0JAl8tQTQ0QasA2lzCZLGUUh_bAVvQrWijUMEKOzIjmxtmnvtcivcDXFHM_LWSuFxqaydWIU8VheAsSncfERNfRg1xvNCb47n-p6o0J9KFVeM_Rq8HSfsKv2_Yyc9KZWVtaxihedq9SmDTXZEnygVX35Bf0p-eBYXD70pe7ktaLi4DqOlHsPBO-LYCxfsxWJFWnScEr-tz2M7O7j_gW8Tlx0nKWjXBv_B8XBiWav7mA_s6d8DtovJddmoTSg5wW963BeXDdiQ"/>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="px-md py-lg max-w-2xl mx-auto">
+<!-- Header Section -->
+<div class="mb-lg">
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface mb-xs">Marketplace</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">Find and pick up available shifts across departments.</p>
+</div>
+<!-- Search and Filter Bar -->
+<div class="mb-lg flex flex-col gap-sm">
+<div class="relative w-full">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" data-icon="search">search</span>
+<input class="w-full bg-surface-container-low border border-surface-variant/30 rounded-lg py-3 pl-10 pr-4 font-body-md text-body-md text-on-surface placeholder-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-shadow" placeholder="Search shifts, departments..." type="text"/>
+</div>
+<!-- Horizontal Filter Scroll -->
+<div class="flex overflow-x-auto gap-xs pb-2 no-scrollbar -mx-md px-md">
+<button class="whitespace-nowrap px-4 py-2 bg-primary text-on-primary rounded-full font-label-md text-label-md transition-colors shrink-0">All Shifts</button>
+<button class="whitespace-nowrap px-4 py-2 bg-surface-container border border-surface-variant/50 text-on-surface hover:bg-surface-container-high rounded-full font-label-md text-label-md transition-colors shrink-0">Needs Cover</button>
+<button class="whitespace-nowrap px-4 py-2 bg-surface-container border border-surface-variant/50 text-on-surface hover:bg-surface-container-high rounded-full font-label-md text-label-md transition-colors shrink-0">Swap Requests</button>
+<button class="whitespace-nowrap px-4 py-2 bg-surface-container border border-surface-variant/50 text-on-surface hover:bg-surface-container-high rounded-full font-label-md text-label-md transition-colors shrink-0">Pediatrics</button>
+<button class="whitespace-nowrap px-4 py-2 bg-surface-container border border-surface-variant/50 text-on-surface hover:bg-surface-container-high rounded-full font-label-md text-label-md transition-colors shrink-0">ER Triage</button>
+</div>
+</div>
+<!-- Shift Feed -->
+<div class="flex flex-col gap-md">
+<!-- Shift Card 1 -->
+<div class="bg-surface-container-lowest border border-surface-variant/30 rounded-xl p-md shadow-sm flex flex-col gap-md">
+<div class="flex justify-between items-start">
+<div>
+<div class="flex items-center gap-xs mb-xs">
+<span class="px-2 py-0.5 bg-error-container text-on-error-container rounded font-label-sm text-label-sm">Needs Cover</span>
+<span class="px-2 py-0.5 bg-surface-container-high text-on-surface-variant rounded font-label-sm text-label-sm">Urgent</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-xs">ER Triage Nurse</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="location_on">location_on</span> Main Hospital, Wing B
+                        </p>
+</div>
+<div class="bg-surface-container rounded-lg p-2 text-center min-w-[64px]">
+<span class="block font-label-sm text-label-sm text-on-surface-variant uppercase">Oct</span>
+<span class="block font-headline-md text-headline-md text-primary font-bold">24</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-sm py-sm border-y border-surface-variant/20">
+<div>
+<span class="block font-label-sm text-label-sm text-on-surface-variant mb-1">Time</span>
+<span class="font-body-sm text-body-sm text-on-surface font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="schedule">schedule</span> 07:00 - 19:00
+                        </span>
+</div>
+<div>
+<span class="block font-label-sm text-label-sm text-on-surface-variant mb-1">Duration</span>
+<span class="font-body-sm text-body-sm text-on-surface font-medium">12 Hours</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-auto pt-xs">
+<div class="flex items-center gap-sm">
+<img alt="Poster" class="w-8 h-8 rounded-full bg-surface-variant" data-alt="A small, circular portrait of a female nurse with a friendly expression, soft lighting, indicating the person who posted the shift request." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-BTSadl47n9ylcHgi8LwwlJc0U48z981GXT-48ZkL1YV2DFlVBgC9F3yhFl0L1GCA_oS9hD0UyvXVfPKTpzuBBuzIXxdDtJEUiQfJ0dnYNa0zOtpRZiLTnEqDJ5G2tD5FBVRDQYnXVN9lAraydzm-8yg4MYH02jFsXYNT40CXWO3iTjPOfsxjrnNicEOl7o9HsXJp-JzemYm8sjItyKUhgkVIDB_uBKL5Xo3ISLhFAPf4df5vg3-rY5y34s0CDIiuJbYWKv93jOA"/>
+<div>
+<span class="block font-label-sm text-label-sm text-on-surface">Posted by</span>
+<span class="block font-body-sm text-body-sm text-on-surface-variant">Sarah Jenkins</span>
+</div>
+</div>
+<button class="bg-primary text-on-primary hover:bg-primary/90 px-6 py-2 rounded-lg font-label-md text-label-md transition-colors shadow-sm">Pick Up</button>
+</div>
+</div>
+<!-- Shift Card 2 -->
+<div class="bg-surface-container-lowest border border-surface-variant/30 rounded-xl p-md shadow-sm flex flex-col gap-md">
+<div class="flex justify-between items-start">
+<div>
+<div class="flex items-center gap-xs mb-xs">
+<span class="px-2 py-0.5 bg-secondary-container text-on-secondary-container rounded font-label-sm text-label-sm">Swap Request</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-xs">Pediatrics Ward RN</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="location_on">location_on</span> Children's Center, Fl 4
+                        </p>
+</div>
+<div class="bg-surface-container rounded-lg p-2 text-center min-w-[64px]">
+<span class="block font-label-sm text-label-sm text-on-surface-variant uppercase">Oct</span>
+<span class="block font-headline-md text-headline-md text-primary font-bold">26</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-sm py-sm border-y border-surface-variant/20">
+<div>
+<span class="block font-label-sm text-label-sm text-on-surface-variant mb-1">Time</span>
+<span class="font-body-sm text-body-sm text-on-surface font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="schedule">schedule</span> 19:00 - 07:00
+                        </span>
+</div>
+<div>
+<span class="block font-label-sm text-label-sm text-on-surface-variant mb-1">Duration</span>
+<span class="font-body-sm text-body-sm text-on-surface font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="dark_mode">dark_mode</span> 12 Hours (Night)
+                        </span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-auto pt-xs">
+<div class="flex items-center gap-sm">
+<img alt="Poster" class="w-8 h-8 rounded-full bg-surface-variant" data-alt="A small, circular portrait of a male nurse in blue scrubs, neutral background, indicating the person requesting the shift swap." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDMTDPTX9mXx3nYMgOWLiyI1_c7N9xF7g81lcr4IWIggTte_k4QMbpTc0f8xdrhwZQuifhA7CEUYBftemzZNb8o6RKylEp-ZMrU8tmaFxLaUs_4ErqgR9LxhDR3o_bdzf6YgrST_avLAASG3eYhn--sJG67Z9R0oyN0V_MpDPHmUBayKYFRPrnWKIw9De_yHVmolEwSLGZPvIwCU9Vdsk2kzqw3-DSMR3P0Kb1iDEIdBA9hNFju7E_d1FNyzFadq__98oVoXlGkkHU"/>
+<div>
+<span class="block font-label-sm text-label-sm text-on-surface">Posted by</span>
+<span class="block font-body-sm text-body-sm text-on-surface-variant">David Chen</span>
+</div>
+</div>
+<button class="bg-surface text-primary border border-primary hover:bg-surface-container-low px-6 py-2 rounded-lg font-label-md text-label-md transition-colors">Offer Swap</button>
+</div>
+</div>
+<!-- Shift Card 3 -->
+<div class="bg-surface-container-lowest border border-surface-variant/30 rounded-xl p-md shadow-sm flex flex-col gap-md opacity-80">
+<div class="flex justify-between items-start">
+<div>
+<div class="flex items-center gap-xs mb-xs">
+<span class="px-2 py-0.5 bg-surface-container-highest text-on-surface-variant rounded font-label-sm text-label-sm">Needs Cover</span>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-xs">ICU Attending</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="location_on">location_on</span> Intensive Care Unit
+                        </p>
+</div>
+<div class="bg-surface-container rounded-lg p-2 text-center min-w-[64px]">
+<span class="block font-label-sm text-label-sm text-on-surface-variant uppercase">Oct</span>
+<span class="block font-headline-md text-headline-md text-on-surface-variant font-bold">28</span>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-sm py-sm border-y border-surface-variant/20">
+<div>
+<span class="block font-label-sm text-label-sm text-on-surface-variant mb-1">Time</span>
+<span class="font-body-sm text-body-sm text-on-surface font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="schedule">schedule</span> 08:00 - 16:00
+                        </span>
+</div>
+<div>
+<span class="block font-label-sm text-label-sm text-on-surface-variant mb-1">Duration</span>
+<span class="font-body-sm text-body-sm text-on-surface font-medium">8 Hours</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-auto pt-xs">
+<div class="flex items-center gap-sm">
+<div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant font-label-sm">
+                            SO
+                        </div>
+<div>
+<span class="block font-label-sm text-label-sm text-on-surface">Posted by</span>
+<span class="block font-body-sm text-body-sm text-on-surface-variant">System</span>
+</div>
+</div>
+<button class="bg-primary text-on-primary hover:bg-primary/90 px-6 py-2 rounded-lg font-label-md text-label-md transition-colors shadow-sm">Pick Up</button>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Navigation (Mobile Only) -->
+<nav class="fixed bottom-0 w-full bg-surface/90 backdrop-blur-xl border-t border-surface-variant/30 md:hidden z-50">
+<div class="flex justify-around items-center p-sm max-w-md mx-auto">
+<a class="flex flex-col items-center p-2 text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="calendar_month">calendar_month</span>
+<span class="font-label-sm text-label-sm">Schedules</span>
+</a>
+<a class="flex flex-col items-center p-2 text-primary font-bold transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="storefront">storefront</span>
+<span class="font-label-sm text-label-sm">Marketplace</span>
+</a>
+<a class="flex flex-col items-center p-2 text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="insights">insights</span>
+<span class="font-label-sm text-label-sm">Analytics</span>
+</a>
+<a class="flex flex-col items-center p-2 text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined mb-1" data-icon="person">person</span>
+<span class="font-label-sm text-label-sm">Profile</span>
+</a>
+</div>
+</nav>
+</body></html>
