@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from config.env import load_env
 load_env()
@@ -320,7 +321,7 @@ def get_org_overview(db: Session, user: User, args: Dict) -> Dict[str, Any]:
 
     # Department breakdown: count shifts grouped by department.
     dept_rows = (
-        db.query(Shift.department, db.func.count(Shift.id))
+        db.query(Shift.department, func.count(Shift.id))
         .filter(Shift.org_id == user.org_id, Shift.department.isnot(None))
         .group_by(Shift.department)
         .all()
