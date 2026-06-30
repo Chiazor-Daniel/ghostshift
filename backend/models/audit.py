@@ -31,7 +31,7 @@ class AuditLog(Base):
     id = Column(String(50), primary_key=True, index=True)
     org_id = Column(String(50), ForeignKey("organizations.id", name="fk_audit_org"), nullable=False)
     user_id = Column(String(50), ForeignKey("users.id", name="fk_audit_user"), nullable=False)
-    action = Column(Enum(AuditAction), nullable=False)
+    action = Column(String(50), nullable=False)
     entity_type = Column(String(100))
     entity_id = Column(String(50))
     old_values = Column(JSON, default=dict)

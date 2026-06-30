@@ -45,7 +45,7 @@ class Department(Base):
 
     id = Column(String(50), primary_key=True, index=True)
     org_id = Column(String(50), ForeignKey("organizations.id", name="fk_dept_org"), nullable=False)
-    name = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False, index=True)
     description = Column(String(500))
     manager_id = Column(String(50), ForeignKey("users.id", name="fk_dept_manager"))
     headcount = Column(Integer, default=0)
@@ -56,9 +56,12 @@ class Department(Base):
 
     # Relationships
     organization = relationship("Organization", back_populates="departments")
-    employees = relationship("User", back_populates="department")
-    manager = relationship("User", back_populates="managed_departments", foreign_keys=[manager_id])
-    shifts = relationship("Shift", back_populates="department")
+    manager = relationship(
+        "User",
+        primaryjoin="Department.manager_id==User.id",
+        foreign_keys=[manager_id],
+    )
+    shifts = relationship("Shift", back_populates="department_rel")
 
 
 class LeavePolicy(Base):

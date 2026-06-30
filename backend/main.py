@@ -7,6 +7,7 @@ import os
 import sys
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,49 +30,42 @@ logger = logging.getLogger(__name__)
 # Import database
 from config.database import engine, Base, get_db
 
-# Import models to create tables
-import models.user
-import models.organization
-import models.shift
-import models.swap
-import models.leave
-import models.availability
-import models.notification
-import models.audit
-import models.invite
-import models.attendance
-import models.cert_alert
-import models.peak_risk
+# Import models to create tables (single import registers every mapped class so
+# SQLAlchemy can resolve forward references like `"Shift"` used in relationship())
+import models  # noqa: F401
 
 # Import routes
 from routes import auth, organization, employee, shift, swap, leave, availability, analytics, notification, integration, audit, invite
 
 # Import WebSocket
-from websocket import app as ws_app
+try:
+    from websocket import app as ws_app
+except Exception as e:
+    logger.warning(f"WebSocket module not loaded: {e}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
     logger.info("Starting GhostShift Backend...")
-    
+
     # Create database tables
     try:
         Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created successfully")
+        logger.info("Database tables created/verified")
     except Exception as e:
         logger.error(f"Error creating database tables: {e}")
-    
+
     # Test database connection
     try:
         with engine.connect() as conn:
-            conn.execute("SELECT 1")
+            conn.execute(__import__('sqlalchemy').text("SELECT 1"))
         logger.info("Database connection successful")
     except Exception as e:
         logger.error(f"Database connection failed: {e}")
-    
+
     yield
-    
+
     logger.info("Shutting down GhostShift Backend...")
     engine.dispose()
 
@@ -80,7 +74,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="GhostShift API",
     description="Healthcare Workforce Scheduling Platform - Backend API",
-    version="1.0.0",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -88,12 +82,48 @@ app = FastAPI(
 )
 
 # Configure CORS
+# Note: allow_credentials=True forbids allow_origins=["*"] (Starlette drops the
+# wildcard silently). Use a regex that matches anything so any demo/tunnel
+# origin works without needing to update this list each time.
+origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+
+
+@app.middleware("http")
+async def cors_preflight_handler(request: Request, call_next):
+    """Short-circuit OPTIONS preflight requests with explicit CORS headers.
+
+    FastAPI's built-in CORSMiddleware sometimes fails to attach the response
+    headers on cross-origin preflight requests routed through tunnels (e.g.
+    ngrok free-tier) — the browser then blocks the actual request as
+    ERR_FAILED. By handling OPTIONS explicitly we guarantee the preflight
+    succeeds regardless of routing layer behaviour.
+    """
+    if request.method == "OPTIONS":
+        origin = request.headers.get("origin", "*")
+        requested_headers = request.headers.get("access-control-request-headers", "*")
+        return JSONResponse(
+            status_code=200,
+            content={},
+            headers={
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+                "Access-Control-Allow-Headers": requested_headers,
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Max-Age": "600",
+                "Vary": "Origin",
+            },
+        )
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(","),
+    allow_origins=origins,
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Include routers
@@ -116,7 +146,7 @@ async def root():
     """Root endpoint"""
     return {
         "name": "GhostShift API",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "description": "Healthcare Workforce Scheduling Platform",
         "endpoints": {
             "auth": "/api/auth/*",
@@ -140,8 +170,8 @@ async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "timestamp": "2026-06-29T10:00:00Z",
-        "uptime": 0
+        "version": "2.0.0",
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 
@@ -157,14 +187,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Handle global exceptions"""
-    logger.error(f"Global exception: {exc}")
+    logger.error(f"Global exception: {exc}", exc_info=True)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": "Internal server error"}
+        content={"detail": "Internal server error", "type": type(exc).__name__}
     )
 
 
 if __name__ == "__main__":
     import uvicorn
+    from datetime import datetime
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False, log_level="info")

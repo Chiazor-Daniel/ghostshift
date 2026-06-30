@@ -1,137 +1,152 @@
-"""
-Notification Routes
-"""
-
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+"""Notification routes — production ready."""
+import logging
+import secrets
 from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Request, Depends
+from sqlalchemy.orm import Session
 
 from config.database import get_db
 from middleware.auth import get_current_user
-from models.notification import Notification, NotificationStatus
-import logging
+from models.notification import Notification
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _serialize(n: Notification) -> dict:
+    return {
+        "id": n.id,
+        "org_id": n.org_id,
+        "user_id": n.user_id,
+        "type": n.type,
+        "title": n.title,
+        "body": n.body or n.message,
+        "message": n.body or n.message,
+        "data": n.data or {},
+        "context": n.context,
+        "status": n.status,
+        "unread": n.status == "unread",
+        "read_at": n.read_at.isoformat() if n.read_at else None,
+        "created_at": n.created_at.isoformat() if n.created_at else None,
+    }
+
+
+def _nid() -> str:
+    return f"n_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(4)}"
+
+
 @router.get("/")
-async def list_notifications(
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user),
-    status_filter: str = None,
-    type_filter: str = None
-):
-    """List notifications for current user"""
-    query = db.query(Notification).filter(
-        Notification.org_id == current_user.org_id,
-        Notification.user_id == current_user.id
+async def list_notifications(request: Request, unread_only: bool = False,
+                              status_filter: Optional[str] = None,
+                              db: Session = Depends(get_db)):
+    user = await get_current_user(request, db)
+    q = db.query(Notification).filter(
+        Notification.org_id == user.org_id,
+        Notification.user_id == user.id,
     )
-    
-    if status_filter:
-        query = query.filter(Notification.status == status_filter)
-    if type_filter:
-        query = query.filter(Notification.type == type_filter)
-    
-    notifications = query.order_by(Notification.created_at.desc()).all()
-    return notifications
+    if unread_only:
+        q = q.filter(Notification.status == "unread")
+    elif status_filter:
+        q = q.filter(Notification.status == status_filter)
+    rows = q.order_by(Notification.created_at.desc()).limit(100).all()
+    return [_serialize(n) for n in rows]
 
 
 @router.get("/{notification_id}")
-async def get_notification(
-    notification_id: str,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    """Get notification details"""
-    notification = db.query(Notification).filter(
+async def get_notification(request: Request, notification_id: str,
+                          db: Session = Depends(get_db)):
+    user = await get_current_user(request, db)
+    n = db.query(Notification).filter(
         Notification.id == notification_id,
-        Notification.org_id == current_user.org_id,
-        Notification.user_id == current_user.id
+        Notification.org_id == user.org_id,
+        Notification.user_id == user.id,
     ).first()
-    
-    if not notification:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Notification not found"
-        )
-    
-    return notification
+    if not n:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return _serialize(n)
 
 
 @router.put("/{notification_id}/read")
-async def mark_as_read(
-    notification_id: str,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    """Mark notification as read"""
-    notification = db.query(Notification).filter(
+async def mark_as_read(request: Request, notification_id: str, db: Session = Depends(get_db)):
+    user = await get_current_user(request, db)
+    n = db.query(Notification).filter(
         Notification.id == notification_id,
-        Notification.org_id == current_user.org_id,
-        Notification.user_id == current_user.id
+        Notification.org_id == user.org_id,
+        Notification.user_id == user.id,
     ).first()
-    
-    if not notification:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Notification not found"
-        )
-    
-    notification.status = NotificationStatus.READ
-    notification.read_at = datetime.utcnow()
+    if not n:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    n.status = "read"
+    n.read_at = datetime.utcnow()
+    n.updated_at = datetime.utcnow()
     db.commit()
-    db.refresh(notification)
-    
-    return notification
+    db.refresh(n)
+    return _serialize(n)
+
+
+@router.put("/read-all")
+async def mark_all_as_read(request: Request, db: Session = Depends(get_db)):
+    user = await get_current_user(request, db)
+    rows = db.query(Notification).filter(
+        Notification.org_id == user.org_id,
+        Notification.user_id == user.id,
+        Notification.status == "unread",
+    ).all()
+    now = datetime.utcnow()
+    for n in rows:
+        n.status = "read"
+        n.read_at = now
+        n.updated_at = now
+    db.commit()
+    return {"updated": len(rows)}
 
 
 @router.delete("/{notification_id}")
-async def delete_notification(
-    notification_id: str,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    """Delete notification"""
-    notification = db.query(Notification).filter(
+async def delete_notification(request: Request, notification_id: str,
+                              db: Session = Depends(get_db)):
+    user = await get_current_user(request, db)
+    n = db.query(Notification).filter(
         Notification.id == notification_id,
-        Notification.org_id == current_user.org_id,
-        Notification.user_id == current_user.id
+        Notification.org_id == user.org_id,
+        Notification.user_id == user.id,
     ).first()
-    
-    if not notification:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Notification not found"
-        )
-    
-    db.delete(notification)
+    if not n:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    db.delete(n)
     db.commit()
-    
-    return {"message": "Notification deleted"}
+    return {"message": "Notification deleted", "id": notification_id}
 
 
 @router.post("/send")
-async def send_notification(
-    notification_data: dict,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    """Send notification to user"""
-    notification = Notification(
-        id=f"notif_{datetime.utcnow().timestamp()}",
-        org_id=current_user.org_id,
-        user_id=notification_data.get("user_id"),
-        type=notification_data.get("type"),
-        title=notification_data.get("title"),
-        message=notification_data.get("message"),
-        data=notification_data.get("data", {}),
-        status=NotificationStatus.UNREAD,
-        created_at=datetime.utcnow()
-    )
-    
-    db.add(notification)
+async def send_notification(request: Request, payload: dict, db: Session = Depends(get_db)):
+    """Send a notification to one or more users (admin only)."""
+    user = await get_current_user(request, db)
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    recipient_ids = payload.get("user_ids") or [payload.get("user_id")]
+    if not recipient_ids or not recipient_ids[0]:
+        raise HTTPException(status_code=400, detail="user_id(s) required")
+
+    sent = []
+    for uid in recipient_ids:
+        n = Notification(
+            id=_nid(),
+            org_id=user.org_id,
+            user_id=uid,
+            type=payload.get("type") or "system",
+            title=payload.get("title") or "Notification",
+            body=payload.get("body") or payload.get("message") or "",
+            context=payload.get("context"),
+            data=payload.get("data", {}),
+            status="unread",
+            created_at=datetime.utcnow(),
+        )
+        db.add(n)
+        sent.append(n)
     db.commit()
-    db.refresh(notification)
-    
-    return notification
+    for n in sent:
+        db.refresh(n)
+    return {"sent": [_serialize(n) for n in sent]}

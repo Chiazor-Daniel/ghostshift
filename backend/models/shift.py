@@ -36,11 +36,21 @@ class Shift(Base):
     manager_id = Column(String(50), ForeignKey("users.id", name="fk_shift_manager"))
     title = Column(String(255), nullable=False)
     description = Column(String(1000))
+    department = Column(String(255))  # Free-text department name
     start_time = Column(DateTime, nullable=False)
     end_time = Column(DateTime, nullable=False)
     duration_hours = Column(Integer, nullable=False)
-    status = Column(Enum(ShiftStatus), default=ShiftStatus.SCHEDULED)
-    type = Column(Enum(ShiftType), default=ShiftType.REGULAR)
+    start_hour = Column(Integer)  # For compat with frontend (0-23)
+    status = Column(String(20), default="scheduled", nullable=False, index=True)
+    type = Column(String(20), default="regular", nullable=False)
+    urgency = Column(String(20), default="medium")
+    certifications = Column(JSON, default=list)
+    pay_differential = Column(String(20), default="+0%")
+    eligible_count = Column(Integer, default=0)
+    training_credit = Column(Boolean, default=False)
+    seniority_preference = Column(String(20), default="none")
+    required_staff = Column(Integer, default=1)
+    assigned_staff = Column(JSON, default=list)
     location = Column(String(255))
     notes = Column(String(1000))
     requirements = Column(JSON, default=dict)
@@ -54,7 +64,10 @@ class Shift(Base):
 
     # Relationships
     organization = relationship("Organization", back_populates="shifts")
-    department = relationship("Department", back_populates="shifts")
+    # NOTE: The Column below is also named "department" (free-text). To avoid a
+    # conflict with the string column, the Department relationship is exposed
+    # via the `department_rel` attribute.
+    department_rel = relationship("Department", back_populates="shifts", foreign_keys=[department_id])
     employee = relationship("User", back_populates="shifts", foreign_keys=[employee_id])
     manager = relationship("User", back_populates="managed_shifts", foreign_keys=[manager_id])
     attendance = relationship("Attendance", back_populates="shift")

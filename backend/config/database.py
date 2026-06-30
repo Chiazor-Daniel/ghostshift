@@ -4,6 +4,10 @@ PostgreSQL connection and session management
 """
 
 import os
+
+from config.env import load_env
+load_env()
+
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -11,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 # Database URL from environment
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:password@localhost:5432/ghostshift"
+    "postgresql://buzz:buzz@localhost:5432/ghostshift"
 )
 
 # Create engine

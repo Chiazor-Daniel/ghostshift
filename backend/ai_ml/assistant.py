@@ -5,7 +5,14 @@ AI Assistant Integration - Supports Groq, OpenAI, and Ollama
 import os
 import logging
 from typing import Dict, List, Optional
-from openai import OpenAI
+
+# Load .env deterministically so GROQ_API_KEY etc. are available even if
+# `config.env` hasn't been imported yet via the normal boot order.
+from config.env import load_env  # noqa: F401  (side-effect import)
+
+load_env()
+
+from openai import OpenAI  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +64,17 @@ class AIAssistant:
                 logger.error(f"Error initializing Ollama client: {e}")
         else:
             logger.warning("No AI API key configured - AI features will be limited")
+
+        # Resolve the model name for whichever provider we picked. Without this
+        # every method that uses self.model raises AttributeError.
+        if self.provider == "groq":
+            self.model = self.groq_model
+        elif self.provider == "openai":
+            self.model = self.openai_model
+        elif self.provider == "ollama":
+            self.model = self.ollama_model
+        else:
+            self.model = None
 
     def generate_shift_recommendations(
         self,
