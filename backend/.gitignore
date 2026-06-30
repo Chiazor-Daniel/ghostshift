@@ -72,7 +72,8 @@ temp/
 *.tmp
 
 # Docker
-Dockerfile
+# (GhostShift is containerised, so the Dockerfile IS tracked.)
+# Dockerfile
 docker-compose.yml
 
 # Backup files
