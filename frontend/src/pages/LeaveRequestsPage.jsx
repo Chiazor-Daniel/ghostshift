@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardHeader, Badge, Drawer, EmptyState, Select } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { useUser } from '../layout/AppShell.jsx'
-import { getLeaveRequests, addLeaveRequest, approveLeave, declineLeave, formatDate, today } from '../data/store.js'
+import { realAPI } from '../services/realAPI.js'
+import { formatDate, today } from '../data/store.js'
 
 const leaveTypes = [
   { value: 'vacation', label: 'Vacation' },
@@ -18,48 +19,73 @@ export default function LeaveRequestsPage() {
   const { user: currentUser } = useUser()
   const isAdmin = currentUser?.role === 'admin'
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [leaves, setLeaves] = useState([])
+  const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({ type: 'vacation', startDate: '', endDate: '', reason: '' })
-  const [, forceRender] = useState(0)
-  const rerender = () => forceRender((x) => x + 1)
 
-  const allLeaves = getLeaveRequests()
-  const myLeaves = allLeaves.filter((l) => l.employeeId === currentUser?.id)
-  const leaves = isAdmin ? allLeaves : myLeaves
-  const pending = leaves.filter((l) => l.status === 'pending')
-  const approved = leaves.filter((l) => l.status === 'approved')
-  const declined = leaves.filter((l) => l.status === 'declined')
+  useEffect(() => {
+    refresh()
+  }, [isAdmin, currentUser?.id])
 
-  function handleSubmit(e) {
+  async function refresh() {
+    if (!currentUser?.id) return
+    setLoading(true)
+    try {
+      const params = isAdmin ? {} : { mine_only: 'true' }
+      const data = await realAPI.getLeaves(params)
+      setLeaves(Array.isArray(data) ? data : [])
+    } catch (err) {
+      toast.push(err.message || 'Could not load leave requests', { tone: 'error' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSubmit(e) {
     e.preventDefault()
     if (!form.startDate || !form.endDate) {
       toast.push('Please select start and end dates', { tone: 'warning' })
       return
     }
-    addLeaveRequest({
-      employeeId: currentUser.id,
-      employeeName: currentUser.name,
-      type: form.type,
-      startDate: form.startDate,
-      endDate: form.endDate,
-      reason: form.reason,
-    })
-    setDrawerOpen(false)
-    setForm({ type: 'vacation', startDate: '', endDate: '', reason: '' })
-    rerender()
-    toast.push('Leave request submitted', { tone: 'success' })
+    try {
+      await realAPI.createLeave({
+        type: form.type,
+        start_date: form.startDate,
+        end_date: form.endDate,
+        reason: form.reason,
+      })
+      toast.push('Leave request submitted', { tone: 'success' })
+      setDrawerOpen(false)
+      setForm({ type: 'vacation', startDate: '', endDate: '', reason: '' })
+      refresh()
+    } catch (err) {
+      toast.push(err.message || 'Could not submit leave request', { tone: 'error' })
+    }
   }
 
-  function handleApprove(id) {
-    approveLeave(id)
-    rerender()
-    toast.push('Leave request approved', { tone: 'success' })
+  async function handleDecide(id, status) {
+    try {
+      await realAPI.decideLeave(id, { status })
+      toast.push(`Leave request ${status}`, { tone: status === 'approved' ? 'success' : 'warning' })
+      refresh()
+    } catch (err) {
+      toast.push(err.message || 'Could not update leave request', { tone: 'error' })
+    }
   }
 
-  function handleDecline(id) {
-    declineLeave(id)
-    rerender()
-    toast.push('Leave request declined', { tone: 'warning' })
+  async function handleCancel(id) {
+    try {
+      await realAPI.cancelLeave(id)
+      toast.push('Leave request cancelled', { tone: 'warning' })
+      refresh()
+    } catch (err) {
+      toast.push(err.message || 'Could not cancel leave request', { tone: 'error' })
+    }
   }
+
+  const pending = leaves.filter((l) => l.status === 'pending')
+  const approved = leaves.filter((l) => l.status === 'approved')
+  const declined = leaves.filter((l) => l.status === 'declined' || l.status === 'rejected')
 
   return (
     <>
@@ -95,41 +121,46 @@ export default function LeaveRequestsPage() {
 
         <Card hover={false}>
           <CardHeader icon="event_busy" title={isAdmin ? 'All leave requests' : 'My leave requests'} />
-          {leaves.length === 0 ? (
+          {loading ? (
+            <div className="p-lg text-center text-on-surface-variant">Loading…</div>
+          ) : leaves.length === 0 ? (
             <EmptyState icon="event_busy" title="No leave requests" description={isAdmin ? 'No employees have requested leave yet.' : 'You have not requested any leave yet.'} />
           ) : (
             <div className="space-y-sm mt-md">
               {leaves
-                .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
+                .sort((a, b) => new Date(b.submitted_at || b.submittedAt) - new Date(a.submitted_at || a.submittedAt))
                 .map((l) => (
                   <div key={l.id} className="flex items-center gap-md p-md rounded-xl border border-outline-variant/30 hover:border-primary/40 transition-colors">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                       l.status === 'approved' ? 'bg-success/10 text-success' :
-                      l.status === 'declined' ? 'bg-error/10 text-error' :
+                      (l.status === 'declined' || l.status === 'rejected') ? 'bg-error/10 text-error' :
                       'bg-warning/10 text-warning'
                     }`}>
                       <span className="material-symbols-outlined text-[20px]">
-                        {l.status === 'approved' ? 'check_circle' : l.status === 'declined' ? 'cancel' : 'hourglass_top'}
+                        {l.status === 'approved' ? 'check_circle' : (l.status === 'declined' || l.status === 'rejected') ? 'cancel' : 'hourglass_top'}
                       </span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-sm flex-wrap">
-                        <span className="font-label-md text-label-md font-bold text-on-surface">{l.employeeName}</span>
-                        <Badge variant={l.status === 'approved' ? 'success' : l.status === 'declined' ? 'error' : 'warning'}>
+                        <span className="font-label-md text-label-md font-bold text-on-surface">{l.employee_name || l.employeeName}</span>
+                        <Badge variant={l.status === 'approved' ? 'success' : (l.status === 'declined' || l.status === 'rejected') ? 'error' : 'warning'}>
                           {l.status}
                         </Badge>
                         <span className="chip bg-surface-variant text-on-surface-variant text-xs">{leaveTypes.find(t => t.value === l.type)?.label || l.type}</span>
                       </div>
                       <div className="font-label-sm text-label-sm text-on-surface-variant mt-0.5">
-                        {formatDate(l.startDate)} – {formatDate(l.endDate)}
+                        {formatDate(l.start_date || l.startDate)} – {formatDate(l.end_date || l.endDate)}
                         {l.reason && ` · ${l.reason}`}
                       </div>
                     </div>
                     {isAdmin && l.status === 'pending' && (
                       <div className="flex gap-sm">
-                        <button onClick={() => handleApprove(l.id)} className="btn-primary py-xs px-sm text-xs">Approve</button>
-                        <button onClick={() => handleDecline(l.id)} className="btn-ghost py-xs px-sm text-xs text-error hover:bg-error/10">Decline</button>
+                        <button onClick={() => handleDecide(l.id, 'approved')} className="btn-primary py-xs px-sm text-xs">Approve</button>
+                        <button onClick={() => handleDecide(l.id, 'rejected')} className="btn-ghost py-xs px-sm text-xs text-error hover:bg-error/10">Decline</button>
                       </div>
+                    )}
+                    {!isAdmin && l.status === 'pending' && (
+                      <button onClick={() => handleCancel(l.id)} className="btn-ghost py-xs px-sm text-xs">Cancel</button>
                     )}
                   </div>
                 ))}

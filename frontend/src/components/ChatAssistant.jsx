@@ -1,102 +1,53 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { getShifts, getSwaps, getEmployees, computeBurnout, getOpenShifts, findCandidates, addSwap, getEmployee } from '../data/store.js'
+import { realAPI } from '../services/realAPI.js'
 import { useUser } from '../layout/AppShell.jsx'
 
 const SUGGESTIONS = [
   'How many open shifts are there?',
-  'What is my burnout risk?',
+  "What's my burnout risk?",
   'Show me pending swap requests',
-  'How do I request time off?',
   'Who is working with me today?',
   'Draft a swap request for my next shift',
   'Explain how AI matching works',
 ]
 
-function generateResponse(query, userId) {
-  const q = query.toLowerCase()
-  const openShifts = getOpenShifts()
-  const swaps = getSwaps()
-  const employees = getEmployees()
-  const pendingSwaps = swaps.filter(s => s.status === 'pending')
+const STORE_KEY = 'gs_chat_session_id'
 
-  if (q.includes('open shift') || q.includes('unfilled')) {
-    return `There are currently **${openShifts.length} open shifts** across ${[...new Set(openShifts.map(s => s.department))].length} departments. ${openShifts.filter(s => s.urgency === 'high').length} are marked as high urgency.`
+// Pull the persisted session_id out of localStorage (matching realAPI._getChatSessionId)
+function getStoredSession() {
+  if (typeof window === 'undefined') return null
+  return window.localStorage.getItem(STORE_KEY)
+}
+
+function summariseToolCalls(tool_calls = []) {
+  if (!tool_calls.length) return null
+  const successes = tool_calls.filter(tc => tc.result && tc.result.ok !== false)
+  const failures = tool_calls.length - successes.length
+  // Lightweight human-readable summary: prefer the tool's `message` field if present.
+  const messages = tool_calls
+    .map(tc => tc.result && tc.result.message)
+    .filter(Boolean)
+  if (messages.length === 1) return `✓ ${messages[0]}`
+  if (messages.length > 1) return `✓ ${messages.length} actions completed`
+  if (failures) return `⚠ ${failures} action${failures > 1 ? 's' : ''} failed`
+  return null
+}
+
+// Convert historical DB turns (mixed user/assistant/tool rows) into the
+// flat {role, content} pairs the UI bubbles need. Tool turns are skipped
+// (their effect is already in the assistant response text).
+function turnsToMessages(turns = []) {
+  const out = []
+  // API returns ascending (oldest first) — keep order
+  for (const t of turns) {
+    if (t.role === 'user' && t.content) {
+      out.push({ role: 'user', text: t.content })
+    } else if (t.role === 'assistant' && t.content) {
+      out.push({ role: 'assistant', text: t.content })
+    }
   }
-
-  if (q.includes('burnout') || q.includes('risk') || q.includes('fatigue')) {
-    const allBurnout = employees.map(e => ({ ...e, ...computeBurnout(e.id) }))
-    const avg = allBurnout.length ? Math.round(allBurnout.reduce((s, e) => s + e.score, 0) / allBurnout.length) : 0
-    const highRisk = allBurnout.filter(e => e.score >= 70).length
-    return `Team burnout index is **${avg}/100**. ${highRisk} employee${highRisk === 1 ? '' : 's'} are at high risk (score ≥70). Check the Health Analytics page for detailed insights.`
-  }
-
-  if (q.includes('swap') || q.includes('pending')) {
-    return `There are **${pendingSwaps.length} pending swap requests** awaiting review. ${pendingSwaps.filter(s => s.aiScore >= 85).length} can be auto-approved based on AI match score ≥85%.`
-  }
-
-  if (q.includes('time off') || q.includes('leave') || q.includes('pto') || q.includes('vacation')) {
-    return `You can request time off from the **Leave Requests** page in the sidebar. Select your leave type, dates, and reason. Your manager will be notified for approval.`
-  }
-
-  if (q.includes('working') || q.includes('colleague') || q.includes('team today')) {
-    const today = new Date().toISOString().slice(0, 10)
-    const todayShifts = getShifts().filter(s => s.date === today || (typeof s.date === 'string' && s.date.startsWith(today)))
-    return `There are **${todayShifts.length} shifts scheduled for today** across ${[...new Set(todayShifts.map(s => s.department))].length} departments.`
-  }
-
-  if (q.includes('draft') && (q.includes('swap') || q.includes('request'))) {
-    if (!userId) return `I need to know who you are to draft a swap. Please log in first.`
-    const myShifts = getShifts().filter(s => s.employeeId === userId && s.status !== 'completed' && s.status !== 'open')
-    if (myShifts.length === 0) return `You don't have any upcoming shifts to swap. Browse the Marketplace to pick up a new shift instead.`
-    const nextShift = myShifts.sort((a, b) => new Date(a.date) - new Date(b.date))[0]
-    const candidates = findCandidates(nextShift.id, 3)
-    if (candidates.length === 0) return `I couldn't find any eligible candidates for your ${nextShift.title || nextShift.role} shift on ${new Date(nextShift.date).toLocaleDateString()}.`
-    const topCandidate = candidates[0]
-    addSwap({
-      requesterId: userId,
-      requesterName: getEmployee(userId)?.name || 'You',
-      fromShiftId: nextShift.id,
-      targetId: topCandidate.id,
-      targetName: topCandidate.name,
-      reason: 'Drafted by Shift assistant',
-    })
-    return `Done! I drafted a swap request for your **${nextShift.title || nextShift.role}** shift on ${new Date(nextShift.date).toLocaleDateString()}.\n\nTop candidate: **${topCandidate.name}** (${topCandidate.score}% match)\n\nCheck the Swap Requests page to review and submit it.`
-  }
-
-  if (q.includes('explain') && (q.includes('ai') || q.includes('match') || q.includes('score') || q.includes('how'))) {
-    return `**How AI matching works:**\n\nWhen a shift needs coverage, the system scores every eligible employee 0–100 based on:\n\n• **Department match** — same department = no penalty\n• **Certifications** — missing required certs = -10 per cert\n• **Burnout risk** — score >70 = -20, >50 = -10\n• **Consecutive days** — ≥4 days = -15\n• **Weekly hours** — >90% of max = -20\n• **Night shift load** — ≥3 night shifts + this is night = -10\n• **Availability** — unavailable slot = -30, preferred = +5\n• **Fairness** — disproportionate weekend/night shifts = -8\n• **Seniority** — 1+ year tenure = +1, 2+ years = +3\n\nScores ≥85% can be auto-approved. Below that requires manager review.`
-  }
-
-  if (q.includes('fairness') || q.includes('equal') || q.includes('distribut')) {
-    return `**Fairness Analytics** tracks how evenly shifts are distributed:\n\n• Weekend shift counts per employee\n• Night shift counts per employee\n• Total hours and overtime per employee\n\nThe fairness score (0–100) is based on variance across all metrics. A low score means some employees are disproportionately overloaded. Check the Health Analytics page for the full breakdown.`
-  }
-
-  if (q.includes('cert') || q.includes('expir') || q.includes('renewal')) {
-    return `Certification expiry alerts appear on your Dashboard (admin) or My Portal (employee) when a cert is within 90 days of expiring. Severity levels:\n\n• **Critical** — ≤14 days\n• **High** — ≤30 days\n• **Medium** — ≤90 days\n\nContact your admin to schedule recertification.`
-  }
-
-  if (q.includes('schedule') || q.includes('shift')) {
-    return `You can view your schedule in **My Portal** (employees) or the **Dashboard** (admins). The calendar shows all your shifts, and you can click any shift for details.`
-  }
-
-  if (q.includes('marketplace') || q.includes('browse')) {
-    return `The **Shift Marketplace** shows all open shifts available for pickup. You can filter by department, urgency, and eligibility. Click any shift to request it.`
-  }
-
-  if (q.includes('availability') || q.includes('prefer')) {
-    return `Set your availability preferences in the **Availability** page. Tap cells in the weekly template to cycle between Preferred, Available, and Unavailable. The AI uses this when matching shifts.`
-  }
-
-  if (q.includes('help') || q.includes('what can')) {
-    return `I can help you with:\n• Checking open shifts and swap requests\n• Understanding burnout risk\n• Drafting swap requests for your shifts\n• Explaining how AI matching works\n• Navigating the app (schedule, marketplace, availability)\n• Requesting time off\n• Finding colleagues on shift\n• Fairness and certification info\n\nJust ask in plain English!`
-  }
-
-  if (q.includes('hello') || q.includes('hi') || q.includes('hey')) {
-    return `Hi! I'm Shift, your scheduling assistant. Ask me anything about your shifts, team, or burnout risk. Try: "How many open shifts are there?" or "Draft a swap request for my next shift"`
-  }
-
-  return `I'm not sure about that yet. Try asking about:\n• Open shifts or swap requests\n• Burnout risk for your team\n• Drafting a swap request\n• How AI matching works\n• Your schedule or availability\n\nI'm a mock assistant for now — real AI coming with the backend!`
+  return out
 }
 
 export default function ChatAssistant() {
@@ -104,11 +55,32 @@ export default function ChatAssistant() {
   const userId = user?.id
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState([
-    { role: 'assistant', text: "Hi! I'm **Shift**, your scheduling assistant. Ask me anything about shifts, swaps, or burnout risk." },
+    { role: 'assistant', text: "Hi! I'm **Shift**, your AI scheduling assistant. I have access to your live shifts, swaps, leaves, and burnout data — ask me anything, or pick a suggestion below to get started." },
   ])
   const [input, setInput] = useState('')
   const [typing, setTyping] = useState(false)
+  const [historyLoaded, setHistoryLoaded] = useState(false)
   const scrollRef = useRef(null)
+
+  // Restore prior session on mount (and on user-change)
+  useEffect(() => {
+    if (!open || historyLoaded) return
+    const sessionId = getStoredSession()
+    if (!sessionId) { setHistoryLoaded(true); return }
+    realAPI.aiHistory(sessionId, 50)
+      .then(res => {
+        const restored = turnsToMessages(res?.turns || [])
+        if (restored.length) {
+          // Replace the welcome message + prepend restored turns
+          setMessages(prev => {
+            const greeting = prev[0] // keep the greeting bubble
+            return greeting ? [greeting, ...restored] : restored
+          })
+        }
+      })
+      .catch(() => {}) // ignore — fresh conversation will work anyway
+      .finally(() => setHistoryLoaded(true))
+  }, [open, historyLoaded])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -116,17 +88,39 @@ export default function ChatAssistant() {
     }
   }, [messages, typing])
 
-  function send(text) {
-    const msg = text || input
-    if (!msg.trim()) return
+  async function send(text) {
+    const msg = (text || input).trim()
+    if (!msg) return
     setMessages((prev) => [...prev, { role: 'user', text: msg }])
     setInput('')
     setTyping(true)
-    setTimeout(() => {
-      const response = generateResponse(msg, userId)
-      setMessages((prev) => [...prev, { role: 'assistant', text: response }])
+
+    try {
+      const r = await realAPI.aiChat(msg, { source: 'chat' })
+      const summary = summariseToolCalls(r.tool_calls || [])
+      const assistantMsg = {
+        role: 'assistant',
+        text: r.response || '…',
+        tool_summary: summary,
+      }
+      setMessages((prev) => [...prev, assistantMsg])
+    } catch (err) {
+      console.warn('ChatAssistant aiChat failed:', err)
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        text: "Sorry, I'm having trouble reaching the AI service right now. Please try again in a moment.",
+      }])
+    } finally {
       setTyping(false)
-    }, 600 + Math.random() * 400)
+    }
+  }
+
+  function startNewConversation() {
+    realAPI.newChatSession()
+    setMessages([
+      { role: 'assistant', text: "New conversation started. What would you like to know?" },
+    ])
+    setHistoryLoaded(true)
   }
 
   function renderText(text) {
@@ -158,12 +152,21 @@ export default function ChatAssistant() {
                 </div>
                 <div>
                   <div className="font-label-md text-label-md font-bold">Shift Assistant</div>
-                  <div className="font-label-sm text-label-sm opacity-80">AI scheduling helper</div>
+                  <div className="font-label-sm text-label-sm opacity-80">AI · live data · memory on</div>
                 </div>
               </div>
-              <button onClick={() => setOpen(false)} className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={startNewConversation}
+                  title="Start a new conversation"
+                  className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">add_comment</span>
+                </button>
+                <button onClick={() => setOpen(false)} className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center transition-colors">
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
             </div>
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
@@ -175,6 +178,11 @@ export default function ChatAssistant() {
                       : 'bg-surface-variant text-on-surface rounded-bl-sm'
                   }`}>
                     {renderText(m.text)}
+                    {m.tool_summary && (
+                      <div className="mt-1.5 pt-1.5 border-t border-outline-variant/30 text-[11px] opacity-70">
+                        {m.tool_summary}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -189,7 +197,7 @@ export default function ChatAssistant() {
                   </div>
                 </div>
               )}
-              {messages.length <= 1 && (
+              {messages.length <= 1 && !typing && (
                 <div className="space-y-2 pt-2">
                   <div className="font-label-sm text-label-sm text-on-surface-variant">Try asking:</div>
                   {SUGGESTIONS.map((s) => (

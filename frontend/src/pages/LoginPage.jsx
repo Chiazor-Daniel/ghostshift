@@ -1,20 +1,22 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import Logo from '../components/Logo.jsx'
 import { roleHome } from '../data/roles.js'
-import { seedData, getInvites, getEmployeeByEmail, addEmployee } from '../data/store.js'
-import { currentUser, managerUser, adminUser, employees as mockEmployees, shifts, swapRequests as mockSwaps } from '../data/mock.js'
+import { useAuth } from '../hooks/useAuth.jsx'
 
 const HERO_IMAGE =
   'https://images.unsplash.com/photo-1639489547592-8aa4475ff677?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
 
 export default function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const { login } = useAuth()
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   function toggleTheme() {
     const next = !dark
@@ -23,83 +25,39 @@ export default function LoginPage() {
     localStorage.setItem('gs_theme', next ? 'dark' : 'light')
   }
 
-  function ensureDemoData() {
-    const employees = JSON.parse(localStorage.getItem('gs_employees') || '[]')
-    if (employees.length > 0) return
-    // Fix: make currentUser id match the shifts (e-201) and dedupe
-    const dedupedEmployees = mockEmployees.filter((e) => e.id !== 'e-201')
-    seedData({
-      currentUser: { ...currentUser, id: 'e-201' },
-      managerUser,
-      adminUser,
-      employees: dedupedEmployees,
-      shifts,
-      swapRequests: mockSwaps,
-    })
-  }
-
-  function demoLogin(role) {
-    ensureDemoData()
-    try {
-      const employees = JSON.parse(localStorage.getItem('gs_employees') || '[]')
-      const match = employees.find((u) => u.role === role)
-      if (!match) { setError(`No ${role} account found`); return }
-      localStorage.setItem('gs_user', JSON.stringify(match))
-      localStorage.setItem('gs_role', match.role)
-      navigate(roleHome(match.role))
-    } catch {
-      setError('Something went wrong. Try again.')
-    }
-  }
-
-  function handleSignIn(e) {
+  async function handleSignIn(e) {
     e.preventDefault()
     setError('')
     if (!email || !password) { setError('Enter your email and password'); return }
-
-    ensureDemoData()
+    setLoading(true)
     try {
-      const normalized = email.toLowerCase().trim()
-      const employees = JSON.parse(localStorage.getItem('gs_employees') || '[]')
-      const match = employees.find((u) => u.email?.toLowerCase() === normalized)
-      const invites = getInvites()
-      const acceptedInvite = invites.find((i) => i.email?.toLowerCase() === normalized && i.status === 'accepted')
+      const data = await login(email.trim(), password)
+      // Always route by role unless the caller specified a redirect (e.g. invite flow)
+      const redirect = location.state?.from?.pathname || roleHome(data.user.role)
+      navigate(redirect, { replace: true })
+    } catch (err) {
+      setError(err.message || 'Sign in failed')
+    } finally {
+      setLoading(false)
+    }
+  }
 
-      if (match?.role === 'admin') {
-        if (match.password !== password) { setError('Invalid email or password'); return }
-        localStorage.setItem('gs_user', JSON.stringify(match))
-        localStorage.setItem('gs_role', match.role)
-        navigate(roleHome(match.role))
-        return
-      }
-
-      if (match?.role === 'employee') {
-        if (!acceptedInvite) { setError('This email has not been invited yet. Ask your admin for an invite link.'); return }
-        localStorage.setItem('gs_user', JSON.stringify(match))
-        localStorage.setItem('gs_role', match.role)
-        navigate(roleHome(match.role))
-        return
-      }
-
-      if (acceptedInvite) {
-        // Invite accepted but employee record missing — create it now
-        const emp = addEmployee({
-          name: acceptedInvite.name || normalized.split('@')[0],
-          email: normalized,
-          role: acceptedInvite.role || 'employee',
-          title: acceptedInvite.role === 'admin' ? 'Administrator' : 'Staff',
-          department: acceptedInvite.department || 'Unassigned',
-          avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(acceptedInvite.name || normalized)}&background=6366f1&color=fff&size=120`,
-        })
-        localStorage.setItem('gs_user', JSON.stringify(emp))
-        localStorage.setItem('gs_role', emp.role)
-        navigate(roleHome(emp.role))
-        return
-      }
-
-      setError('Invalid email or password')
-    } catch {
-      setError('Something went wrong. Try again.')
+  async function demoLogin(role) {
+    setError('')
+    setLoading(true)
+    const creds = role === 'admin'
+      ? { email: 'demo.admin@riverside.health',   password: 'Demo1234!' }
+      : { email: 'demo.employee@riverside.health', password: 'Demo1234!' }
+    setEmail(creds.email)
+    setPassword(creds.password)
+    try {
+      const data = await login(creds.email, creds.password)
+      const redirect = roleHome(data.user.role)
+      navigate(redirect, { replace: true })
+    } catch (err) {
+      setError(err.message || 'Demo login failed')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -112,7 +70,6 @@ export default function LoginPage() {
       >
         <span className="material-symbols-outlined text-[20px]">{dark ? 'light_mode' : 'dark_mode'}</span>
       </button>
-      {/* Left — form */}
       <div className="flex items-center justify-center p-md sm:p-xl lg:p-2xl">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -137,12 +94,14 @@ export default function LoginPage() {
               </label>
               <input
                 id="email"
+                name="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
                 placeholder="you@hospital.org"
                 className="input-base mt-xs"
+                required
               />
             </div>
 
@@ -153,20 +112,22 @@ export default function LoginPage() {
                 </label>
                 <button
                   type="button"
-                  onClick={() => setPassword('password')}
                   className="font-label-sm text-label-sm text-primary hover:underline"
+                  onClick={() => alert('Password reset: contact your admin or use the invite link your admin sent you.')}
                 >
                   Forgot?
                 </button>
               </div>
               <input
                 id="password"
+                name="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
                 placeholder="••••••••"
                 className="input-base mt-xs"
+                required
               />
             </div>
 
@@ -177,21 +138,30 @@ export default function LoginPage() {
               </p>
             )}
 
-            <button type="submit" className="btn-primary w-full justify-center py-md text-base shadow-soft-md">
-              Sign in
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary w-full justify-center py-md text-base shadow-soft-md disabled:opacity-60"
+            >
+              {loading ? 'Signing in…' : 'Sign in'}
               <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
             </button>
 
             <div className="pt-sm border-t border-outline-variant/20">
-              <p className="font-label-sm text-label-sm text-on-surface-variant text-center mb-2">Demo — quick sign in</p>
+              <p className="font-label-sm text-label-sm text-on-surface-variant text-center mb-1">
+                Try the full demo — live data, AI assistant, ready to explore
+              </p>
+              <p className="text-[11px] text-on-surface-variant/70 text-center mb-2">
+                Riverside General Hospital · 14 staff · 90 days of shifts
+              </p>
               <div className="grid grid-cols-2 gap-sm">
                 <button type="button" onClick={() => demoLogin('employee')} className="btn-secondary py-sm text-sm justify-center">
                   <span className="material-symbols-outlined text-[16px]">person</span>
-                  Employee
+                  Demo as Employee
                 </button>
                 <button type="button" onClick={() => demoLogin('admin')} className="btn-secondary py-sm text-sm justify-center">
                   <span className="material-symbols-outlined text-[16px]">admin_panel_settings</span>
-                  Admin
+                  Demo as Admin
                 </button>
               </div>
             </div>
@@ -206,13 +176,8 @@ export default function LoginPage() {
         </motion.div>
       </div>
 
-      {/* Right — brand panel */}
       <div className="relative hidden md:block overflow-hidden">
-        <img
-          src={HERO_IMAGE}
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover"
-        />
+        <img src={HERO_IMAGE} alt="" className="absolute inset-0 w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-br from-primary/85 via-primary/55 to-primary-900/80" />
         <div className="absolute inset-0 bg-gradient-to-t from-primary-900/70 via-transparent to-transparent" />
 
@@ -238,10 +203,7 @@ export default function LoginPage() {
                 { icon: 'monitor_heart', label: 'Burnout prediction 2–3 weeks early' },
                 { icon: 'forum', label: 'Conversational scheduling assistant' },
               ].map((f) => (
-                <div
-                  key={f.label}
-                  className="flex items-center gap-sm rounded-xl bg-white/10 px-sm py-sm"
-                >
+                <div key={f.label} className="flex items-center gap-sm rounded-xl bg-white/10 px-sm py-sm">
                   <span className="material-symbols-outlined text-[18px]">{f.icon}</span>
                   <span className="font-body-md text-body-md font-medium">{f.label}</span>
                 </div>

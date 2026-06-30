@@ -3,6 +3,8 @@ import { AnimatePresence } from 'framer-motion'
 import { useState, useEffect } from 'react'
 import { roleHome, ROLES } from './data/roles.js'
 import RequireRole from './components/RequireRole.jsx'
+import { useAuth } from './hooks/useAuth.jsx'
+import { realAPI } from './services/realAPI.js'
 import LandingPage from './pages/LandingPage.jsx'
 import PricingPage from './pages/PricingPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
@@ -38,9 +40,27 @@ function GuardedRoute({ roles, activeRole, children }) {
   )
 }
 
+function RequireAuth({ children }) {
+  const { user } = useAuth()
+  const location = useLocation()
+  if (!realAPI.token || !user) {
+    return <Navigate to="/login" replace state={{ from: location }} />
+  }
+  return children
+}
+
 export default function App() {
   const location = useLocation()
+  const { user } = useAuth()
   const [activeRole, setActiveRole] = useState(() => validRole(localStorage.getItem('gs_role')))
+
+  // Keep activeRole in sync with the real authenticated user
+  useEffect(() => {
+    if (user?.role) {
+      setActiveRole(user.role)
+      localStorage.setItem('gs_role', user.role)
+    }
+  }, [user])
 
   useEffect(() => {
     localStorage.setItem('gs_role', activeRole)
@@ -78,22 +98,24 @@ export default function App() {
         <Route
           path="/app/*"
           element={
-            <AppShell activeRole={activeRole} setActiveRole={setActiveRole}>
-              <Routes>
-                <Route index element={<RoleHomeRedirect role={activeRole} />} />
-                <Route path="dashboard" element={<GuardedRoute roles={routeRoles.dashboard} activeRole={activeRole}><DashboardPage /></GuardedRoute>} />
-                <Route path="employee" element={<GuardedRoute roles={routeRoles.employee} activeRole={activeRole}><EmployeePortal /></GuardedRoute>} />
-                <Route path="marketplace" element={<GuardedRoute roles={routeRoles.marketplace} activeRole={activeRole}><MarketplacePage /></GuardedRoute>} />
-                <Route path="swaps" element={<GuardedRoute roles={routeRoles.swaps} activeRole={activeRole}><SwapRequestsPage /></GuardedRoute>} />
-                <Route path="availability" element={<GuardedRoute roles={routeRoles.availability} activeRole={activeRole}><AvailabilityPage /></GuardedRoute>} />
-                <Route path="insights" element={<GuardedRoute roles={routeRoles.insights} activeRole={activeRole}><InsightsPage /></GuardedRoute>} />
-                <Route path="employees" element={<GuardedRoute roles={routeRoles.employees} activeRole={activeRole}><EmployeesPage /></GuardedRoute>} />
-                <Route path="admin" element={<GuardedRoute roles={routeRoles.admin} activeRole={activeRole}><AdminPage /></GuardedRoute>} />
-                <Route path="notifications" element={<GuardedRoute roles={routeRoles.notifications} activeRole={activeRole}><NotificationsPage /></GuardedRoute>} />
-                <Route path="support" element={<GuardedRoute roles={routeRoles.support} activeRole={activeRole}><SupportPage /></GuardedRoute>} />
-                <Route path="leaves" element={<GuardedRoute roles={routeRoles.leaves} activeRole={activeRole}><LeaveRequestsPage /></GuardedRoute>} />
-              </Routes>
-            </AppShell>
+            <RequireAuth>
+              <AppShell activeRole={activeRole} setActiveRole={setActiveRole}>
+                <Routes>
+                  <Route index element={<RoleHomeRedirect role={activeRole} />} />
+                  <Route path="dashboard" element={<GuardedRoute roles={routeRoles.dashboard} activeRole={activeRole}><DashboardPage /></GuardedRoute>} />
+                  <Route path="employee" element={<GuardedRoute roles={routeRoles.employee} activeRole={activeRole}><EmployeePortal /></GuardedRoute>} />
+                  <Route path="marketplace" element={<GuardedRoute roles={routeRoles.marketplace} activeRole={activeRole}><MarketplacePage /></GuardedRoute>} />
+                  <Route path="swaps" element={<GuardedRoute roles={routeRoles.swaps} activeRole={activeRole}><SwapRequestsPage /></GuardedRoute>} />
+                  <Route path="availability" element={<GuardedRoute roles={routeRoles.availability} activeRole={activeRole}><AvailabilityPage /></GuardedRoute>} />
+                  <Route path="insights" element={<GuardedRoute roles={routeRoles.insights} activeRole={activeRole}><InsightsPage /></GuardedRoute>} />
+                  <Route path="employees" element={<GuardedRoute roles={routeRoles.employees} activeRole={activeRole}><EmployeesPage /></GuardedRoute>} />
+                  <Route path="admin" element={<GuardedRoute roles={routeRoles.admin} activeRole={activeRole}><AdminPage /></GuardedRoute>} />
+                  <Route path="notifications" element={<GuardedRoute roles={routeRoles.notifications} activeRole={activeRole}><NotificationsPage /></GuardedRoute>} />
+                  <Route path="support" element={<GuardedRoute roles={routeRoles.support} activeRole={activeRole}><SupportPage /></GuardedRoute>} />
+                  <Route path="leaves" element={<GuardedRoute roles={routeRoles.leaves} activeRole={activeRole}><LeaveRequestsPage /></GuardedRoute>} />
+                </Routes>
+              </AppShell>
+            </RequireAuth>
           }
         />
 

@@ -3,8 +3,9 @@ import { useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import Logo from '../components/Logo.jsx'
 import { Select } from '../components/ui.jsx'
-import { addEmployee, getShifts, seedData } from '../data/store.js'
-import { currentUser, managerUser, adminUser, employees as mockEmployees, shifts, swapRequests as mockSwaps } from '../data/mock.js'
+import { useAuth } from '../hooks/useAuth.jsx'
+import { roleHome } from '../data/roles.js'
+import { realAPI } from '../services/realAPI.js'
 
 const HERO_IMAGE =
   'https://images.unsplash.com/photo-1639489547592-8aa4475ff677?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D'
@@ -56,38 +57,36 @@ export default function OnboardingPage() {
   const next = () => setStep((s) => Math.min(s + 1, steps.length - 1))
   const prev = () => setStep((s) => Math.max(s - 1, 0))
 
-  function complete() {
-    localStorage.setItem('gs_onboarding', JSON.stringify(data))
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  const { signup } = useAuth()
 
-    const adminEntry = {
-      name: data.adminName,
-      email: data.adminEmail,
-      password: data.adminPassword,
-      role: 'admin',
-      title: 'Administrator',
-      department: data.departments?.[0] || 'Administration',
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(data.adminName)}&background=6366f1&color=fff&size=120`,
-    }
-
-    // Add admin to store (creates gs_employees if needed)
-    const saved = addEmployee(adminEntry)
-
-    // Seed demo data for new organizations so the dashboard isn't empty
-    if (getShifts().length === 0) {
-      const deduped = mockEmployees.filter((e) => e.id !== 'e-201')
-      seedData({
-        currentUser: { ...currentUser, id: 'e-201' },
-        managerUser,
-        adminUser,
-        employees: deduped,
-        shifts,
-        swapRequests: mockSwaps,
+  async function complete() {
+    setSubmitError('')
+    setSubmitting(true)
+    try {
+      const result = await signup({
+        org_name: data.orgName,
+        org_type: data.orgType,
+        industry: 'healthcare',
+        size: data.orgSize,
+        city: data.location,
+        admin_name: data.adminName,
+        admin_email: data.adminEmail,
+        admin_password: data.adminPassword,
       })
+      // Create departments (best effort, don't block login)
+      try {
+        for (const name of data.departments) {
+          await realAPI.createDepartment({ name }).catch(() => {})
+        }
+      } catch {}
+      navigate(roleHome(result.user.role), { replace: true })
+    } catch (err) {
+      setSubmitError(err.message || 'Could not create organization')
+    } finally {
+      setSubmitting(false)
     }
-
-    localStorage.setItem('gs_user', JSON.stringify(saved))
-    localStorage.setItem('gs_role', 'admin')
-    navigate('/app/insights')
   }
 
   const canNext = () => {
@@ -294,19 +293,26 @@ export default function OnboardingPage() {
 
           {/* Navigation */}
           <div className="flex items-center justify-between mt-xl pt-md border-t border-outline-variant/30">
-            <button onClick={prev} disabled={step === 0} className="btn-ghost disabled:opacity-40">
+            <button onClick={prev} disabled={step === 0 || submitting} className="btn-ghost disabled:opacity-40">
               Back
             </button>
             <div className="flex items-center gap-sm">
+              {submitError && (
+                <p className="font-label-sm text-label-sm text-error mr-sm">{submitError}</p>
+              )}
               {step < steps.length - 1 ? (
                 <button onClick={next} disabled={!canNext()} className="btn-primary">
                   Continue
                   <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
                 </button>
               ) : (
-                <button onClick={complete} className="btn-primary">
-                  <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                  Set up GhostShift
+                <button onClick={complete} disabled={submitting || !canNext()} className="btn-primary disabled:opacity-60">
+                  {submitting ? 'Setting up…' : (
+                    <>
+                      <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                      Set up GhostShift
+                    </>
+                  )}
                 </button>
               )}
             </div>

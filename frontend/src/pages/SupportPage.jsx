@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 
 import { Card, CardHeader, Badge } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
+import { realAPI } from '../services/realAPI.js'
 
 const faqs = [
   { q: 'How does AI swap matching work?', a: 'Our matching engine uses OR-Tools constraint programming. It considers 14 factors including certifications, rest gaps, consecutive hours, and peer compatibility to find the optimal peer for your shift in <1 second.' },
@@ -22,6 +23,37 @@ const tickets = [
 export default function SupportPage() {
   const [search, setSearch] = useState('')
   const toast = useToast()
+
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'assistant', body: "Hi! I'm the GhostShift assistant. Ask me anything about your shifts, swap policies, or burnout insights." },
+  ])
+  const [chatInput, setChatInput] = useState('')
+  const [chatBusy, setChatBusy] = useState(false)
+  const chatRef = useRef(null)
+
+  useEffect(() => {
+    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight
+  }, [chatMessages, chatOpen])
+
+  async function sendMessage(e) {
+    e?.preventDefault?.()
+    const text = chatInput.trim()
+    if (!text || chatBusy) return
+    const userMsg = { role: 'user', body: text }
+    setChatMessages((m) => [...m, userMsg])
+    setChatInput('')
+    setChatBusy(true)
+    try {
+      const res = await realAPI.aiChat(text, { source: 'support' })
+      const reply = res?.reply || res?.response || res?.message || res?.text || 'I could not generate a reply right now.'
+      setChatMessages((m) => [...m, { role: 'assistant', body: typeof reply === 'string' ? reply : JSON.stringify(reply) }])
+    } catch (err) {
+      setChatMessages((m) => [...m, { role: 'assistant', body: `Sorry — ${err.message || 'I could not reach the AI service.'}` }])
+    } finally {
+      setChatBusy(false)
+    }
+  }
 
   return (
     <>
@@ -180,7 +212,7 @@ export default function SupportPage() {
               <div className="space-y-sm">
                 <button
                   className="btn-primary w-full justify-center"
-                  onClick={() => toast.push('Connecting you to a support agent…', { tone: 'success' })}
+                  onClick={() => setChatOpen(true)}
                 >
                   <span className="material-symbols-outlined text-[18px]">chat</span>
                   Start live chat
@@ -230,6 +262,71 @@ export default function SupportPage() {
           </aside>
         </div>
       </section>
+
+      {chatOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="fixed inset-0 bg-black/40 z-[110] flex items-end sm:items-center justify-center sm:justify-end p-0 sm:p-6"
+          onClick={() => setChatOpen(false)}
+        >
+          <motion.div
+            initial={{ y: 40 }}
+            animate={{ y: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-surface rounded-t-2xl sm:rounded-2xl shadow-soft-xl w-full sm:w-[420px] h-[80vh] sm:h-[600px] flex flex-col"
+          >
+            <div className="flex items-center justify-between p-md border-b border-outline-variant/30">
+              <div className="flex items-center gap-sm">
+                <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[20px]">support_agent</span>
+                </div>
+                <div>
+                  <div className="font-label-md text-label-md font-bold text-on-surface">GhostShift assistant</div>
+                  <div className="font-label-sm text-label-sm text-on-surface-variant">Powered by your org's data</div>
+                </div>
+              </div>
+              <button onClick={() => setChatOpen(false)} className="text-on-surface-variant hover:text-on-surface">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div ref={chatRef} className="flex-1 overflow-y-auto p-md space-y-3">
+              {chatMessages.map((m, i) => (
+                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[85%] rounded-2xl px-3 py-2 ${
+                    m.role === 'user'
+                      ? 'bg-primary text-on-primary'
+                      : 'bg-surface-variant text-on-surface'
+                  }`}>
+                    <p className="font-body-sm text-body-sm whitespace-pre-wrap leading-relaxed">{m.body}</p>
+                  </div>
+                </div>
+              ))}
+              {chatBusy && (
+                <div className="flex justify-start">
+                  <div className="bg-surface-variant text-on-surface-variant rounded-2xl px-3 py-2">
+                    <span className="font-body-sm text-body-sm">typing…</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <form onSubmit={sendMessage} className="p-md border-t border-outline-variant/30 flex gap-2">
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Ask about shifts, swaps, burnout…"
+                className="input-base flex-1"
+                disabled={chatBusy}
+              />
+              <button type="submit" disabled={chatBusy || !chatInput.trim()} className="btn-primary disabled:opacity-40">
+                <span className="material-symbols-outlined text-[18px]">send</span>
+              </button>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
     </>
   )
 }

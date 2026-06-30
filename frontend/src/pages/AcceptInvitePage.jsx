@@ -2,14 +2,17 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import Logo from '../components/Logo.jsx'
-import { acceptInvite } from '../data/store.js'
+import { realAPI } from '../services/realAPI.js'
 
 export default function AcceptInvitePage() {
   const { token } = useParams()
   const navigate = useNavigate()
   const [status, setStatus] = useState('processing')
   const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
+  const [tempPassword, setTempPassword] = useState('')
   const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     if (!token) {
@@ -17,18 +20,28 @@ export default function AcceptInvitePage() {
       setError('Invite link is missing.')
       return
     }
-    const result = acceptInvite(token)
-    if (result.error) {
-      setStatus('error')
-      setError(result.error)
-    } else {
-      setStatus('success')
-      setEmail(result.invite.email)
-      // Redirect to login after a short delay so the user sees the confirmation
-      const id = setTimeout(() => navigate('/login'), 2500)
-      return () => clearTimeout(id)
-    }
-  }, [token, navigate])
+    (async () => {
+      try {
+        const result = await realAPI.acceptInvite(token)
+        setEmail(result.invite?.email || '')
+        setName(result.invite?.name || '')
+        setTempPassword(result.created_user?.temp_password || '')
+        setStatus('success')
+      } catch (err) {
+        setStatus('error')
+        setError(err.message || 'This invite link is invalid or has already been used.')
+      }
+    })()
+  }, [token])
+
+  async function copy() {
+    if (!tempPassword) return
+    try {
+      await navigator.clipboard.writeText(tempPassword)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {}
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-md bg-background">
@@ -60,8 +73,27 @@ export default function AcceptInvitePage() {
             </div>
             <h1 className="font-headline-lg text-headline-lg text-on-surface font-semibold">You're all set</h1>
             <p className="font-body-md text-body-md text-on-surface-variant">
-              <strong className="text-on-surface">{email}</strong> has been activated. You can now sign in with any password.
+              <strong className="text-on-surface">{name || email}</strong> has been activated.
             </p>
+
+            {tempPassword && (
+              <div className="rounded-xl border border-outline-variant/40 bg-surface-variant/40 p-md text-left space-y-2">
+                <p className="font-label-sm text-label-sm text-on-surface-variant">Your temporary password</p>
+                <div className="flex items-center gap-sm">
+                  <code className="flex-1 font-mono text-sm bg-background px-3 py-2 rounded-md border border-outline-variant/30 select-all">
+                    {tempPassword}
+                  </code>
+                  <button onClick={copy} className="btn-secondary px-md py-sm text-sm">
+                    <span className="material-symbols-outlined text-[16px]">{copied ? 'check' : 'content_copy'}</span>
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  Save this password — you'll use it to sign in. You can change it after signing in.
+                </p>
+              </div>
+            )}
+
             <Link to="/login" className="btn-primary inline-flex justify-center w-full">
               Continue to sign in
               <span className="material-symbols-outlined text-[18px]">arrow_forward</span>

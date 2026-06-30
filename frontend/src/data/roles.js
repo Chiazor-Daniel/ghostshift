@@ -14,7 +14,7 @@ export const ROLES = {
     name: 'Administrator',
     title: 'Workforce Admin',
     icon: 'admin_panel_settings',
-    home: '/app/insights',
+    home: '/app/dashboard',
     blurb: 'Team oversight, org settings, insights',
   },
 }

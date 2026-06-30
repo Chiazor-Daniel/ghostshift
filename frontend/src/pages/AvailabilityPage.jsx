@@ -1,30 +1,26 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { useUser } from '../layout/AppShell.jsx'
-import { Card, CardHeader, Badge, Select } from '../components/ui.jsx'
+import { Card, CardHeader, Badge } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
-import {
-  getAvailabilityGrid,
-  setAvailabilityCell,
-  getAllAvailability,
-  getEmployees,
-  computeCoverageGaps,
-  DAYS,
-  SLOTS,
-} from '../data/store.js'
+import { realAPI } from '../services/realAPI.js'
 
-const SLOT_LABELS = {
-  morning: 'Morning (7-3)',
-  afternoon: 'Afternoon (3-11)',
-  night: 'Night (11-7)',
-}
+const SLOTS = [
+  { id: 'morning', label: 'Morning (7-3)', start: '07:00', end: '15:00' },
+  { id: 'afternoon', label: 'Afternoon (3-11)', start: '15:00', end: '23:00' },
+  { id: 'night', label: 'Night (11-7)', start: '23:00', end: '07:00' },
+]
+const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+// Display days Mon-Sun, store day_of_week: 0=Mon ... 6=Sun
+const displayIdxToStore = (di) => di
+const storeIdxToDisplay = (si) => si
 
 export default function AvailabilityPage() {
-  const { activeRole } = useUser()
-  const isEmployee = activeRole === 'employee'
+  const { user: currentUser } = useUser()
+  const isEmployee = currentUser?.role === 'employee'
   const [view, setView] = useState(isEmployee ? 'me' : 'team')
-  const [period, setPeriod] = useState('Recurring (default)')
 
   const tabs = isEmployee
     ? [{ id: 'me', label: 'My template' }]
@@ -32,6 +28,11 @@ export default function AvailabilityPage() {
         { id: 'team', label: 'Team overview' },
         { id: 'coverage', label: 'Coverage gaps' },
       ]
+
+  useEffect(() => {
+    if (isEmployee) setView('me')
+    else setView('team')
+  }, [isEmployee])
 
   return (
     <>
@@ -41,35 +42,20 @@ export default function AvailabilityPage() {
       <section className="page-section">
         {!isEmployee && (
         <Card hover={false}>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-1 bg-surface-variant/60 p-1 rounded-xl">
-              {tabs.map((v) => (
-                <button
-                  key={v.id}
-                  onClick={() => setView(v.id)}
-                  className={`px-3 py-1.5 rounded-lg font-label-sm md:font-label-md text-label-sm md:text-label-md transition-all ${
-                    view === v.id
-                      ? 'bg-surface shadow-soft-sm text-primary font-bold'
-                      : 'text-on-surface-variant'
-                  }`}
-                >
-                  {v.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="font-label-sm text-label-sm text-on-surface-variant">Template period</span>
-              <Select
-                value={period}
-                onChange={setPeriod}
-                options={[
-                  { value: 'Recurring (default)', label: 'Recurring (default)' },
-                  { value: 'This week only', label: 'This week only' },
-                  { value: 'Custom range', label: 'Custom range' },
-                ]}
-                className="w-44"
-              />
-            </div>
+          <div className="flex items-center gap-1 bg-surface-variant/60 p-1 rounded-xl w-fit">
+            {tabs.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => setView(v.id)}
+                className={`px-3 py-1.5 rounded-lg font-label-sm md:font-label-md text-label-sm md:text-label-md transition-all ${
+                  view === v.id
+                    ? 'bg-surface shadow-soft-sm text-primary font-bold'
+                    : 'text-on-surface-variant'
+                }`}
+              >
+                {v.label}
+              </button>
+            ))}
           </div>
         </Card>
         )}
@@ -82,32 +68,65 @@ export default function AvailabilityPage() {
 }
 
 function MyTemplate() {
-  const user = useUser()
-  const empId = user.user.id
-  const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const { user: currentUser } = useUser()
+  const empId = currentUser?.id
+  const toast = useToast()
+  const [grid, setGrid] = useState(() =>
+    Array.from({ length: 7 }, () => Array(SLOTS.length).fill('neutral'))
+  )
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!empId) return
+    refresh()
+  }, [empId])
+
+  async function refresh() {
+    try {
+      const list = await realAPI.getAvailability({ employee_id: empId })
+      const next = Array.from({ length: 7 }, () => Array(SLOTS.length).fill('neutral'))
+      ;(list || []).forEach((a) => {
+        const di = storeIdxToDisplay(a.day_of_week)
+        const si = SLOTS.findIndex((s) => s.start === a.start_time)
+        if (di < 7 && si >= 0 && next[di]?.[si] !== undefined) {
+          const status = a.status === 'preferred' ? 'preferred' : a.status === 'unavailable' ? 'unavailable' : 'neutral'
+          next[di][si] = status
+        }
+      })
+      setGrid(next)
+    } catch (err) {
+      toast.push(err.message || 'Could not load availability', { tone: 'error' })
+    }
+  }
 
   const cycle = (cur) => {
     const order = ['preferred', 'neutral', 'unavailable']
     return order[(order.indexOf(cur) + 1) % order.length]
   }
 
-  const rawGrid = getAvailabilityGrid(empId)
-  // Store uses Sun-Sat, display uses Mon-Sun. Remap: store[0]=Sun, store[1]=Mon → display[0]=store[1]
-  const grid = [rawGrid[1], rawGrid[2], rawGrid[3], rawGrid[4], rawGrid[5], rawGrid[6], rawGrid[0]]
-
-  const [displayGrid, setDisplayGrid] = useState(grid)
-
-  const setCell = (displayDayIdx, si, newVal) => {
-    // Convert display index to store index (Mon=1, Tue=2, ..., Sun=0)
-    const storeDayIdx = displayDayIdx === 6 ? 0 : displayDayIdx + 1
-    setAvailabilityCell(empId, storeDayIdx, si, newVal)
-    setDisplayGrid((g) => g.map((row, i) => i === displayDayIdx ? row.map((c, j) => j === si ? newVal : c) : row))
+  async function setCell(displayDayIdx, si, newVal) {
+    setGrid((g) => g.map((row, i) => i === displayDayIdx ? row.map((c, j) => j === si ? newVal : c) : row))
+    const slot = SLOTS[si]
+    const dayOfWeek = displayIdxToStore(displayDayIdx)
+    const status = newVal === 'preferred' ? 'preferred' : newVal === 'unavailable' ? 'unavailable' : 'available'
+    try {
+      await realAPI.upsertAvailability({
+        employee_id: empId,
+        day_of_week: dayOfWeek,
+        start_time: slot.start,
+        end_time: slot.end,
+        status,
+        is_recurring: true,
+      })
+    } catch (err) {
+      toast.push(err.message || 'Could not save', { tone: 'error' })
+    }
   }
 
   const counts = {
-    preferred: displayGrid.flat().filter((c) => c === 'preferred').length,
-    neutral: displayGrid.flat().filter((c) => c === 'neutral').length,
-    unavailable: displayGrid.flat().filter((c) => c === 'unavailable').length,
+    preferred: grid.flat().filter((c) => c === 'preferred').length,
+    neutral: grid.flat().filter((c) => c === 'neutral').length,
+    unavailable: grid.flat().filter((c) => c === 'unavailable').length,
   }
 
   const mode = {
@@ -143,23 +162,22 @@ function MyTemplate() {
           <span className="material-symbols-outlined text-primary text-[20px]">event_available</span>
           <h2 className="font-headline-md text-md font-bold text-on-surface">Weekly template</h2>
           <span className="font-label-sm text-[11px] text-on-surface-variant">Tap cells to cycle</span>
+          {saving && <span className="ml-auto text-xs text-on-surface-variant">Saving…</span>}
         </div>
 
         <div className="overflow-x-auto scrollbar-thin">
           <div className="grid gap-1.5 min-w-[480px]" style={{ gridTemplateColumns: `80px repeat(${SLOTS.length}, 1fr)` }}>
             <div />
             {SLOTS.map((s) => (
-              <div key={s} className="text-center font-label-sm text-[11px] text-on-surface-variant pb-2 leading-tight">
-                {SLOT_LABELS[s]}
+              <div key={s.id} className="text-center font-label-sm text-[11px] text-on-surface-variant pb-2 leading-tight">
+                {s.label}
               </div>
             ))}
           </div>
           {WEEK_DAYS.map((day, i) => (
             <div key={day} className="grid gap-1.5 min-w-[480px] mt-1" style={{ gridTemplateColumns: `80px repeat(${SLOTS.length}, 1fr)` }}>
-              <div className="font-label-md text-label-md font-bold text-on-surface flex items-center justify-end pr-2">
-                {day}
-              </div>
-              {displayGrid[i].map((cell, j) => (
+              <div className="font-label-md text-label-md font-bold text-on-surface flex items-center justify-end pr-2">{day}</div>
+              {grid[i].map((cell, j) => (
                 <motion.button
                   key={j}
                   whileTap={{ scale: 0.93 }}
@@ -170,8 +188,8 @@ function MyTemplate() {
                 </motion.button>
               ))}
             </div>
-            ))}
-          </div>
+          ))}
+        </div>
 
         <div className="mt-3 flex items-center justify-center gap-4 pt-3 border-t border-outline-variant/20">
           {['preferred', 'neutral', 'unavailable'].map((k) => (
@@ -187,15 +205,33 @@ function MyTemplate() {
 }
 
 function TeamOverview() {
-  const employees = useMemo(() => getEmployees(), [])
-  const allAvail = useMemo(() => getAllAvailability(), [])
+  const toast = useToast()
+  const [employees, setEmployees] = useState([])
+  const [allAvail, setAllAvail] = useState([])
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const [emps, avail] = await Promise.all([
+          realAPI.getEmployees(),
+          realAPI.getAvailability(),
+        ])
+        setEmployees(emps || [])
+        setAllAvail(avail || [])
+      } catch (err) {
+        toast.push(err.message || 'Could not load availability', { tone: 'error' })
+      }
+    })()
+  }, [])
 
   const heatmapData = useMemo(() => {
-    return employees.filter(e => e.role === 'employee').slice(0, 12).map(emp => {
-      const dayScores = DAYS.map((_, day) =>
+    return (employees || []).slice(0, 12).map((emp) => {
+      const dayScores = Array.from({ length: 7 }, (_, day) =>
         SLOTS.map((_, slot) => {
-          const entry = allAvail.find(a => a.employeeId === emp.id && a.day === day && a.slot === slot)
-          return entry ? (entry.value === 'preferred' ? 100 : entry.value === 'neutral' ? 50 : 0) : 50
+          const slotTimes = SLOTS[slot]
+          const entry = allAvail.find((a) => a.employee_id === emp.id && a.day_of_week === day && a.start_time === slotTimes.start)
+          if (!entry) return 50
+          return entry.status === 'preferred' ? 100 : entry.status === 'unavailable' ? 0 : 50
         })
       )
       const flat = dayScores.flat()
@@ -204,8 +240,8 @@ function TeamOverview() {
     })
   }, [employees, allAvail])
 
-  if (!heatmapData.length) {
-    return <Card hover={false}><p className="text-on-surface-variant">No availability data yet.</p></Card>
+  if (heatmapData.length === 0) {
+    return <Card hover={false}><p className="text-on-surface-variant p-4">No availability data yet.</p></Card>
   }
 
   return (
@@ -220,7 +256,9 @@ function TeamOverview() {
           {heatmapData.map(({ emp, dayScores, score }) => (
             <div key={emp.id} className="flex items-center gap-md">
               <div className="flex items-center gap-sm w-48 flex-shrink-0">
-                <img src={emp.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
+                <div className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-bold">
+                  {emp.name.split(' ').map((n) => n[0]).join('')}
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-label-md text-label-md text-on-surface truncate">{emp.name}</div>
                   <div className="font-label-sm text-label-sm text-on-surface-variant truncate">{emp.department}</div>
@@ -233,9 +271,7 @@ function TeamOverview() {
                       <div
                         key={si}
                         className="flex-1 h-5 rounded"
-                        style={{
-                          background: `rgba(37,99,235,${0.15 + (v / 100) * 0.7})`,
-                        }}
+                        style={{ background: `rgba(37,99,235,${0.15 + (v / 100) * 0.7})` }}
                         title={`${v}%`}
                       />
                     ))}
@@ -256,11 +292,48 @@ function TeamOverview() {
 function CoverageGaps() {
   const toast = useToast()
   const navigate = useNavigate()
-  const gaps = useMemo(() => computeCoverageGaps(), [])
+  const [shifts, setShifts] = useState([])
+  const [employees, setEmployees] = useState([])
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const [sh, emps] = await Promise.all([realAPI.getShifts(), realAPI.getEmployees()])
+        setShifts(sh || [])
+        setEmployees(emps || [])
+      } catch (err) {
+        toast.push(err.message || 'Could not load', { tone: 'error' })
+      }
+    })()
+  }, [])
+
+  const gaps = useMemo(() => {
+    const result = []
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    shifts.forEach((s) => {
+      const required = s.required_staff || 1
+      const assigned = (s.assigned_staff || []).length
+      if (assigned < required) {
+        const dt = new Date(s.date)
+        const day = dayNames[dt.getDay()]
+        const ratio = assigned / required
+        const severity = ratio < 0.4 ? 'critical' : ratio < 0.7 ? 'high' : ratio < 1 ? 'medium' : 'low'
+        result.push({
+          id: s.id,
+          department: s.department,
+          day,
+          needed: required,
+          staffed: assigned,
+          severity,
+          date: s.date,
+        })
+      }
+    })
+    return result
+  }, [shifts])
 
   const totalNeed = gaps.reduce((sum, g) => sum + Math.max(0, g.needed - g.staffed), 0)
-  const criticalCount = gaps.filter(g => g.severity === 'critical').length
-  const aiFillable = gaps.length
+  const criticalCount = gaps.filter((g) => g.severity === 'critical').length
 
   return (
     <>
@@ -273,12 +346,12 @@ function CoverageGaps() {
         <Card hover>
           <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Critical gaps</div>
           <div className="font-display-lg text-display-lg font-bold text-warning mt-1">{criticalCount}</div>
-          <div className="font-label-sm text-label-sm text-on-surface-variant">need attention today</div>
+          <div className="font-label-sm text-label-sm text-on-surface-variant">need attention</div>
         </Card>
         <Card hover>
-          <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">AI fillable</div>
-          <div className="font-display-lg text-display-lg font-bold text-primary mt-1">{Math.min(aiFillable, totalNeed + criticalCount)} / {Math.max(1, totalNeed + criticalCount)}</div>
-          <div className="font-label-sm text-label-sm text-on-surface-variant">matchable</div>
+          <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Team size</div>
+          <div className="font-display-lg text-display-lg font-bold text-primary mt-1">{employees.length}</div>
+          <div className="font-label-sm text-label-sm text-on-surface-variant">available to cover</div>
         </Card>
       </div>
 
@@ -286,13 +359,10 @@ function CoverageGaps() {
         <CardHeader icon="priority_high" title="Coverage gaps" />
         <div className="mt-md space-y-sm">
           {gaps.length === 0 && (
-            <p className="text-on-surface-variant text-center py-4">No coverage gaps detected this week.</p>
+            <p className="text-on-surface-variant text-center py-4">No coverage gaps detected. All shifts are fully staffed.</p>
           )}
           {gaps.map((g) => (
-            <div
-              key={g.id}
-              className="flex flex-wrap items-center gap-md p-md rounded-xl border border-outline-variant/30 hover:border-primary/40"
-            >
+            <div key={g.id} className="flex flex-wrap items-center gap-md p-md rounded-xl border border-outline-variant/30 hover:border-primary/40">
               <div className={`w-2 h-12 rounded-full ${
                 g.severity === 'critical' ? 'bg-error' : g.severity === 'high' ? 'bg-error' : g.severity === 'medium' ? 'bg-warning' : 'bg-success'
               }`} />
@@ -303,15 +373,11 @@ function CoverageGaps() {
                     {g.severity}
                   </Badge>
                 </div>
-                <p className="font-label-sm text-label-sm text-on-surface-variant mt-0.5">
-                  {g.day}
-                </p>
+                <p className="font-label-sm text-label-sm text-on-surface-variant mt-0.5">{g.day} · {g.date}</p>
               </div>
               <div className="text-right">
                 <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Have / Need</div>
-                <div className="font-headline-md text-lg font-bold text-on-surface">
-                  {g.staffed} / {g.needed}
-                </div>
+                <div className="font-headline-md text-lg font-bold text-on-surface">{g.staffed} / {g.needed}</div>
               </div>
               <button
                 onClick={() => navigate(`/app/marketplace?dept=${encodeURIComponent(g.department)}`)}

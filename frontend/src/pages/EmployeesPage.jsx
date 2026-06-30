@@ -1,8 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Card, Avatar, Badge, Select, Drawer, EmptyState } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
-import { currentUser, managerUser, adminUser, employees as mockEmployees, shifts, swapRequests as mockSwaps } from '../data/mock.js'
-import { getEmployees, seedData, getInvites, addInvite } from '../data/store.js'
+import { realAPI } from '../services/realAPI.js'
 
 const roles = [
   { value: 'employee', label: 'Employee' },
@@ -25,12 +24,18 @@ export default function EmployeesPage() {
   const [createdInvites, setCreatedInvites] = useState([])
 
   useEffect(() => {
-    // Trigger seed on first load; make demo employee id align with shifts
-    const deduped = mockEmployees.filter((e) => e.id !== 'e-201')
-    seedData({ currentUser: { ...currentUser, id: 'e-201' }, managerUser, adminUser, employees: deduped, shifts, swapRequests: mockSwaps })
-    setEmployees(getEmployees())
-    setInvites(getInvites())
+    refresh()
   }, [])
+
+  async function refresh() {
+    try {
+      const [emps, invs] = await Promise.all([realAPI.getEmployees(), realAPI.getInvites()])
+      setEmployees(emps || [])
+      setInvites(invs || [])
+    } catch (err) {
+      toast.push(err.message || 'Could not load employees', { tone: 'error' })
+    }
+  }
 
   const filtered = useMemo(() => {
     return employees.filter((u) => {
@@ -55,7 +60,7 @@ export default function EmployeesPage() {
     setRows((prev) => (prev.length === 1 ? [emptyRow()] : prev.filter((_, i) => i !== index)))
   }
 
-  function handleAddInvite(e) {
+  async function handleAddInvite(e) {
     e.preventDefault()
     const validRows = rows.filter((r) => r.name.trim() && r.email.trim())
     if (validRows.length === 0) {
@@ -65,26 +70,26 @@ export default function EmployeesPage() {
 
     const created = []
     const errors = []
-    validRows.forEach((r) => {
-      const result = addInvite({
-        name: r.name,
-        email: r.email,
-        department: r.department || 'Unassigned',
-        role: r.role,
-      })
-      if (result.error) {
-        errors.push(`${r.email}: ${result.error}`)
-      } else {
-        created.push(result.invite)
+    for (const r of validRows) {
+      try {
+        const result = await realAPI.createInvite({
+          name: r.name,
+          email: r.email,
+          department: r.department || 'Unassigned',
+          role: r.role,
+        })
+        created.push({ ...result.invite, temp_password: result.created_user?.temp_password })
+      } catch (err) {
+        errors.push(`${r.email}: ${err.message}`)
       }
-    })
+    }
 
     if (errors.length > 0) {
       errors.forEach((err) => toast.push(err, { tone: 'error' }))
     }
 
     if (created.length > 0) {
-      setInvites(getInvites())
+      await refresh()
       setCreatedInvites(created)
       setRows([emptyRow()])
       toast.push(`${created.length} invite${created.length === 1 ? '' : 's'} created.`, { tone: 'success' })
@@ -105,6 +110,7 @@ export default function EmployeesPage() {
   function closeCreated() {
     setCreatedInvites([])
     setShowModal(false)
+    refresh()
   }
 
   return (
@@ -268,6 +274,20 @@ export default function EmployeesPage() {
                 {createdInvites.map((i) => (
                   <div key={i.id} className="p-md rounded-xl bg-surface-container/50 border border-outline-variant/30 space-y-sm">
                     <div className="font-label-md text-label-md font-semibold text-on-surface">{i.email}</div>
+                    {i.temp_password && (
+                      <div className="flex items-center gap-sm">
+                        <span className="font-label-sm text-label-sm text-on-surface-variant w-32 shrink-0">Temp password</span>
+                        <code className="flex-1 font-mono text-sm bg-background px-3 py-2 rounded-md border border-outline-variant/30 select-all">{i.temp_password}</code>
+                        <button
+                          type="button"
+                          onClick={() => { navigator.clipboard.writeText(i.temp_password); toast.push('Temp password copied', { tone: 'success' }) }}
+                          className="btn-secondary whitespace-nowrap py-2 px-3"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">content_copy</span>
+                          Copy
+                        </button>
+                      </div>
+                    )}
                     <div className="flex items-center gap-sm">
                       <input readOnly value={inviteLink(i.token)} className="input-base flex-1 text-sm" />
                       <button onClick={() => copyLink(i.token)} className="btn-primary whitespace-nowrap py-2 px-3">
