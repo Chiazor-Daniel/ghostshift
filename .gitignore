@@ -4,7 +4,3 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
-
-# Frontend build output is regenerated at deploy time.
-# (Existing dist/ files remain in history; this only prevents future re-commits.)
-dist/
