@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Card, CardHeader, Badge, Avatar, Drawer, StatCard, Select } from '../components/ui.jsx'
+import { Card, CardHeader, Badge, Avatar, Drawer, StatCard, Select, ListSkeleton } from '../components/ui.jsx'
 import Calendar from '../components/Calendar.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
@@ -102,7 +102,7 @@ export default function ManagerDashboard() {
         status: 'open',
         assigned_staff: [],
       })
-      toast.push('Shift created and posted to marketplace', { tone: 'success' })
+      toast.push('Shift created and posted', { tone: 'success' })
       setShowNewShift(false)
       setNewShift({ ...newShiftDefaults(), department: newShift.department })
       try { await realAPI.logAudit({ action: 'create_shift', entity_type: 'shift' }) } catch {}
@@ -172,7 +172,7 @@ export default function ManagerDashboard() {
       </div>
 
       <section className="page-section space-y-md">
-        {loading && <div className="text-on-surface-variant text-sm">Loading…</div>}
+        {loading && <ListSkeleton variant="card" count={3} />}
 
         {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -191,15 +191,15 @@ export default function ManagerDashboard() {
               </span>
               <div>
                 <h2 className="font-headline-md text-headline-md font-bold text-on-surface">{criticalGaps} critical gaps</h2>
-                <p className="font-label-sm text-label-sm text-on-surface-variant">These shifts are understaffed — open the marketplace to fill them.</p>
+                <p className="font-label-sm text-label-sm text-on-surface-variant">These shifts are understaffed — open the shifts list to fill them.</p>
               </div>
             </div>
           </Card>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          {/* Pending swaps */}
-          <div className="lg:col-span-7 space-y-4">
+          {/* Pending swaps + Upcoming shifts */}
+          <div className="lg:col-span-5 space-y-4 order-2 lg:order-1">
             <Card hover={false}>
               <CardHeader icon="swap_horiz" title="Pending swaps" subtitle={`${pendingSwaps.length} awaiting your call`} />
               {pendingSwaps.length === 0 ? (
@@ -268,10 +268,10 @@ export default function ManagerDashboard() {
             </Card>
           </div>
 
-          {/* Calendar sidebar */}
-          <div className="lg:col-span-5">
+          {/* Calendar — gets the wider column so Month/Week/Day view isn't squished */}
+          <div className="lg:col-span-7 order-1 lg:order-2">
             <Card hover={false}>
-              <CardHeader icon="calendar_month" title="Schedule view" />
+              <CardHeader icon="calendar_month" title="Schedule view" subtitle="Click a date to see shifts" />
               <div className="mt-md">
                 <Calendar
                   events={filteredShifts.map((s) => ({
@@ -286,7 +286,7 @@ export default function ManagerDashboard() {
       </section>
 
       {/* New shift drawer */}
-      <Drawer open={showNewShift} onClose={() => setShowNewShift(false)} title="Create new shift" subtitle="Post it to the marketplace for staff to pick up">
+      <Drawer open={showNewShift} onClose={() => setShowNewShift(false)} title="Create new shift" subtitle="Post it for staff to pick up">
         <form onSubmit={createShift} className="p-4 space-y-md">
           <div>
             <label className="font-label-sm text-label-sm text-on-surface-variant">Role</label>

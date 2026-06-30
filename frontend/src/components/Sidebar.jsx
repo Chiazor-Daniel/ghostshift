@@ -4,11 +4,19 @@ import { useState, useCallback } from 'react'
 import Logo from './Logo.jsx'
 import { useToast } from './Toast.jsx'
 import { getNotifications } from '../data/store.js'
+import { Avatar } from './ui.jsx'
+
+function initialsFor(name) {
+  if (!name) return '?'
+  const parts = String(name).trim().split(/\s+/)
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
 
 const navItems = [
   { to: '/app/dashboard', label: 'Dashboard', icon: 'dashboard', roles: ['admin'] },
   { to: '/app/employee', label: 'My Portal', icon: 'person', roles: ['employee'] },
-  { to: '/app/marketplace', label: 'Marketplace', icon: 'storefront', roles: ['employee', 'admin'] },
+  { to: '/app/marketplace', label: 'Shifts', icon: 'storefront', roles: ['employee', 'admin'] },
   { to: '/app/swaps', label: 'Swap Requests', icon: 'swap_horiz', roles: ['admin'] },
   { to: '/app/availability', label: 'Availability', icon: 'event_available', roles: ['employee', 'admin'] },
   { to: '/app/insights', label: 'Health Analytics', icon: 'monitor_heart', roles: ['admin'] },
@@ -201,11 +209,11 @@ function SidebarContent({ user, activeRole, collapsed, onToggleCollapse, mobile,
 
       <div className="mt-1 pt-3 border-t border-outline-variant/30">
         <div className={`flex items-center gap-sm ${collapsed ? 'justify-center' : 'px-sm'}`}>
-          <img
+          <Avatar
             src={user.avatar}
-            alt={user.name}
-            title={collapsed ? `${user.name} · ${user.title}` : undefined}
-            className="w-9 h-9 rounded-full object-cover border border-outline-variant/30 flex-shrink-0"
+            initials={initialsFor(user.name)}
+            size="md"
+            className={collapsed ? '' : 'flex-shrink-0'}
           />
           {!collapsed && (
             <div className="min-w-0 flex-1">

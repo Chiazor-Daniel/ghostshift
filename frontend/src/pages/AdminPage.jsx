@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-import { Card, CardHeader, Badge, EmptyState } from '../components/ui.jsx'
+import { Card, CardHeader, Badge, EmptyState, ListSkeleton } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 
@@ -129,7 +129,7 @@ function OrgSection() {
   }
 
   if (loading || !org) {
-    return <Card hover={false}><div className="p-4 text-center text-on-surface-variant">Loading…</div></Card>
+    return <Card hover={false}><div className="p-md"><ListSkeleton variant="card" count={3} /></div></Card>
   }
 
   const settings = org.settings || {}
@@ -442,7 +442,7 @@ function AuditSection() {
         </div>
         <div className="divide-y divide-outline-variant/20">
           {loading ? (
-            <div className="px-4 py-12 text-center text-on-surface-variant">Loading…</div>
+            <div className="p-md"><ListSkeleton variant="row" count={5} /></div>
           ) : visible.length === 0 ? (
             <div className="px-4 py-12 text-center">
               <span className="material-symbols-outlined text-on-surface-variant text-[32px]">history</span>

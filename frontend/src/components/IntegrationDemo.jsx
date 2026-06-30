@@ -121,7 +121,19 @@ const IntegrationDemo = () => {
         </div>
 
         {loading.employees ? (
-          <p>Loading employees...</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="border rounded-lg p-4 space-y-2 animate-pulse">
+                <div className="flex items-center mb-2">
+                  <div className="w-10 h-10 rounded-full bg-gray-200 mr-3" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 bg-gray-200 rounded w-3/4" />
+                    <div className="h-2 bg-gray-200 rounded w-1/2" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {employees.slice(0, 6).map(emp => (
@@ -163,7 +175,11 @@ const IntegrationDemo = () => {
         </div>
 
         {loading.shifts ? (
-          <p>Loading shifts...</p>
+          <div className="animate-pulse space-y-2">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-8 bg-gray-200 rounded" />
+            ))}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -217,7 +233,14 @@ const IntegrationDemo = () => {
         </div>
 
         {loading.analytics ? (
-          <p>Loading analytics...</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-pulse">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="bg-gray-50 p-4 rounded-lg space-y-2">
+                <div className="h-3 bg-gray-200 rounded w-2/3" />
+                <div className="h-6 bg-gray-200 rounded w-1/3" />
+              </div>
+            ))}
+          </div>
         ) : analytics ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-red-50 p-4 rounded-lg">

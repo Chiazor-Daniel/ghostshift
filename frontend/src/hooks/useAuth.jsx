@@ -17,9 +17,10 @@ export function AuthProvider({ children }) {
       localStorage.setItem('gs_user', JSON.stringify(merged))
       setUser(merged)
     } catch (err) {
-      // 401 → clear and bounce to login
+      // 401 → clear and bounce to login. Swallow any localStorage error so we
+      // never tear the React tree (was breaking the login form on mobile).
       if (err.status === 401) {
-        realAPI.clearSession()
+        try { realAPI.clearSession() } catch { /* ignore */ }
         setUser(null)
       }
     } finally {
@@ -28,8 +29,10 @@ export function AuthProvider({ children }) {
   }, [])
 
   useEffect(() => {
-    if (realAPI.token && realAPI.user) {
-      // refresh in background
+    // Only attempt a session refresh when we actually have a token AND a user
+    // shape from a previous login. A token with no user is stale and the
+    // /auth/me round-trip is what was crashing the login page.
+    if (realAPI.token && realAPI.user && realAPI.user.id) {
       refresh()
     }
   }, [refresh])

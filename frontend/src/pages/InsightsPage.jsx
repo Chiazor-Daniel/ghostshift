@@ -13,6 +13,7 @@ import {
 import { Card, CardHeader, Badge, ProgressBar, Modal, Avatar } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
+import { ListSkeleton } from '../components/ui.jsx'
 
 const heatmapMax = 100
 
@@ -197,7 +198,7 @@ export default function InsightsPage() {
           </div>
           <div className="p-4 overflow-x-auto">
             {loading ? (
-              <div className="text-center py-8 text-on-surface-variant text-sm">Loading burnout data…</div>
+              <div className="py-2"><ListSkeleton variant="row" count={3} /></div>
             ) : deptBurnout.length === 0 ? (
               <div className="text-center py-8 text-on-surface-variant text-sm">
                 No burnout data available. Add employees and shifts to see insights.

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useUser } from '../layout/AppShell.jsx'
 import Calendar from '../components/Calendar.jsx'
-import { Card, CardHeader, Badge, Avatar, Drawer, EmptyState } from '../components/ui.jsx'
+import { Card, CardHeader, Badge, Avatar, Drawer, EmptyState, ListSkeleton, Pagination } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 import { formatDate, timeLabel, today } from '../data/store.js'
@@ -14,6 +14,8 @@ export default function EmployeePortal() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerShift, setDrawerShift] = useState(null)
   const [shiftPhase, setShiftPhase] = useState('upcoming')
+  const [shiftPage, setShiftPage] = useState(1)
+  const [swapPage, setSwapPage] = useState(1)
   const [myShifts, setMyShifts] = useState([])
   const [openShifts, setOpenShifts] = useState([])
   const [mySwaps, setMySwaps] = useState([])
@@ -60,6 +62,11 @@ export default function EmployeePortal() {
 
   const visible = shiftPhase === 'upcoming' ? upcoming : completed
 
+  const SHIFT_PAGE_SIZE = 10
+  const SWAP_PAGE_SIZE = 8
+  const shiftPageItems = visible.slice((shiftPage - 1) * SHIFT_PAGE_SIZE, shiftPage * SHIFT_PAGE_SIZE)
+  const swapPageItems = mySwaps.slice((swapPage - 1) * SWAP_PAGE_SIZE, swapPage * SWAP_PAGE_SIZE)
+
   const nextShift = upcoming[0]
   const myBuroutScore = burnout?.employees?.[0]?.burnout_score || 0
   const myRiskLevel = burnout?.employees?.[0]?.risk_level || 'low'
@@ -96,7 +103,7 @@ export default function EmployeePortal() {
       </div>
 
       <section className="page-section space-y-md">
-        {loading && <div className="text-on-surface-variant text-sm">Loading…</div>}
+        {loading && !myShifts.length && <ListSkeleton variant="card" count={4} />}
 
         {/* Hero card with burnout score */}
         <Card hover={false}>
@@ -119,7 +126,7 @@ export default function EmployeePortal() {
                   </div>
                 </>
               ) : (
-                <p className="font-body-md text-body-md text-on-surface-variant mt-2">No upcoming shifts scheduled. Browse the marketplace to pick one up.</p>
+                <p className="font-body-md text-body-md text-on-surface-variant mt-2">No upcoming shifts scheduled. Browse open shifts to pick one up.</p>
               )}
               {nextShift && (
                 <div className="flex gap-2 mt-4">
@@ -158,7 +165,7 @@ export default function EmployeePortal() {
           ].map((t) => (
             <button
               key={t.id}
-              onClick={() => setShiftPhase(t.id)}
+              onClick={() => { setShiftPhase(t.id); setShiftPage(1) }}
               className={`px-4 py-2.5 font-label-md text-label-md transition-all border-b-2 whitespace-nowrap ${
                 shiftPhase === t.id
                   ? 'border-primary text-primary font-bold'
@@ -179,12 +186,12 @@ export default function EmployeePortal() {
             <EmptyState
               icon="event_busy"
               title={shiftPhase === 'upcoming' ? 'No upcoming shifts' : 'No completed shifts'}
-              description={shiftPhase === 'upcoming' ? 'Browse the marketplace to pick up shifts.' : 'Your history will appear here.'}
+              description={shiftPhase === 'upcoming' ? 'Browse open shifts to pick up extra hours.' : 'Your history will appear here.'}
             />
           </Card>
         ) : (
           <div className="space-y-sm">
-            {visible.map((s) => (
+            {shiftPageItems.map((s) => (
               <Card key={s.id} hover={false}>
                 <div className="flex items-center gap-md flex-wrap">
                   <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
@@ -212,6 +219,7 @@ export default function EmployeePortal() {
                 </div>
               </Card>
             ))}
+            <Pagination page={shiftPage} pageSize={SHIFT_PAGE_SIZE} total={visible.length} onChange={setShiftPage} />
           </div>
         )}
 
@@ -220,7 +228,7 @@ export default function EmployeePortal() {
           <Card hover={false}>
             <CardHeader icon="swap_horiz" title="My swap requests" />
             <div className="mt-4 space-y-2">
-              {mySwaps.map((sw) => (
+              {swapPageItems.map((sw) => (
                 <div key={sw.id} className="flex items-center gap-md p-md rounded-lg border border-outline-variant/30">
                   <span className={`w-9 h-9 rounded-lg flex items-center justify-center ${
                     sw.status === 'approved' ? 'bg-success/10 text-success' :
@@ -239,6 +247,7 @@ export default function EmployeePortal() {
                   </div>
                 </div>
               ))}
+              <Pagination page={swapPage} pageSize={SWAP_PAGE_SIZE} total={mySwaps.length} onChange={setSwapPage} />
             </div>
           </Card>
         )}

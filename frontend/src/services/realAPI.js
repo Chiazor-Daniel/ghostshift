@@ -1,7 +1,7 @@
 // Real GhostShift API client — talks to the FastAPI backend.
 // Endpoints match backend route prefixes in /backend/routes/.
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://ghostshift-v1-0-0.onrender.com/api'
 
 class RealAPI {
   constructor() {
@@ -24,21 +24,27 @@ class RealAPI {
   }
 
   setSession({ access_token, refresh_token, user }) {
+    if (!user) throw new Error('setSession: missing user payload from server')
     this.token = access_token
     this.refreshToken = refresh_token
     this.user = user
     localStorage.setItem('gs_access_token', access_token)
     localStorage.setItem('gs_refresh_token', refresh_token)
     localStorage.setItem('gs_user', JSON.stringify(user))
-    localStorage.setItem('gs_role', user.role)
-    localStorage.setItem('gs_org_id', user.org_id)
+    localStorage.setItem('gs_role', user.role || '')
+    if (user.org_id != null) localStorage.setItem('gs_org_id', user.org_id)
   }
 
   clearSession() {
     this.token = null
     this.refreshToken = null
     this.user = null
-    ['gs_access_token','gs_refresh_token','gs_user','gs_role','gs_org_id'].forEach(k => localStorage.removeItem(k))
+    try {
+      ['gs_access_token','gs_refresh_token','gs_user','gs_role','gs_org_id']
+        .forEach(k => localStorage.removeItem(k))
+    } catch {
+      // localStorage may be unavailable (private mode, quota, etc.) — never let this throw.
+    }
   }
 
   async _request(path, options = {}) {
@@ -48,8 +54,14 @@ class RealAPI {
 
     let response = await fetch(url, { ...options, headers })
 
-    // 401 with refresh token → try refresh once
-    if (response.status === 401 && this.refreshToken && !options._retried) {
+    // 401 with a *valid-looking* refresh token → try refresh once. A refresh
+    // token that the server already rejected (or that we don't have a user
+    // for) is just going to 422 again and spam the console.
+    const canRetry = response.status === 401
+      && this.refreshToken
+      && this.user
+      && !options._retried
+    if (canRetry) {
       const refreshed = await this._refresh()
       if (refreshed) {
         headers.Authorization = `Bearer ${this.token}`

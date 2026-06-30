@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Card, Avatar, Badge, Select, Drawer, EmptyState } from '../components/ui.jsx'
+import { Card, Avatar, Badge, Select, Drawer, EmptyState, TableRowSkeleton, Modal } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 
@@ -19,21 +19,31 @@ export default function EmployeesPage() {
   const [query, setQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [showModal, setShowModal] = useState(false)
+  const [viewing, setViewing] = useState(null)        // employee being viewed
+  const [editing, setEditing] = useState(null)        // employee being edited
+  const [editForm, setEditForm] = useState({ name: '', email: '', role: 'employee', department: '' })
+  const [busyId, setBusyId] = useState(null)         // row currently being mutated
   const emptyRow = () => ({ name: '', email: '', department: '', role: 'employee' })
   const [rows, setRows] = useState([emptyRow()])
   const [createdInvites, setCreatedInvites] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [visibleLimit, setVisibleLimit] = useState(10)
+  const EMPLOYEE_PAGE_SIZE = 10
 
   useEffect(() => {
     refresh()
   }, [])
 
   async function refresh() {
+    setLoading(true)
     try {
       const [emps, invs] = await Promise.all([realAPI.getEmployees(), realAPI.getInvites()])
       setEmployees(emps || [])
       setInvites(invs || [])
     } catch (err) {
       toast.push(err.message || 'Could not load employees', { tone: 'error' })
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -45,6 +55,10 @@ export default function EmployeesPage() {
       return u.name.toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)
     })
   }, [employees, query, roleFilter])
+
+  useEffect(() => { setVisibleLimit(EMPLOYEE_PAGE_SIZE) }, [query, roleFilter])
+
+  const visibleEmployees = filtered.slice(0, visibleLimit)
 
   const pendingInvites = useMemo(() => invites.filter((i) => i.status === 'pending'), [invites])
 
@@ -113,6 +127,58 @@ export default function EmployeesPage() {
     refresh()
   }
 
+  function startEdit(emp) {
+    setEditing(emp)
+    setEditForm({
+      name: emp.name || '',
+      email: emp.email || '',
+      role: emp.role || 'employee',
+      department: emp.department || '',
+    })
+  }
+
+  async function saveEdit() {
+    if (!editing) return
+    setBusyId(editing.id)
+    try {
+      await realAPI.updateEmployee(editing.id, {
+        name: editForm.name.trim(),
+        email: editForm.email.trim(),
+        role: editForm.role,
+        department: editForm.department.trim(),
+      })
+      try { await realAPI.logAudit({ action: 'update_employee', entity_type: 'employee', entity_id: editing.id, new_values: editForm }) } catch {}
+      toast.push('Employee updated', { tone: 'success' })
+      setEditing(null)
+      refresh()
+    } catch (err) {
+      toast.push(err.message || 'Could not update employee', { tone: 'error' })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function deleteEmployee(emp) {
+    if (!confirm(`Remove ${emp.name} from the team? They will lose access immediately.`)) return
+    setBusyId(emp.id)
+    try {
+      await realAPI.deleteEmployee(emp.id)
+      try { await realAPI.logAudit({ action: 'delete_employee', entity_type: 'employee', entity_id: emp.id }) } catch {}
+      toast.push('Employee removed', { tone: 'info' })
+      if (viewing?.id === emp.id) setViewing(null)
+      refresh()
+    } catch (err) {
+      toast.push(err.message || 'Could not remove employee', { tone: 'error' })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const departments = useMemo(
+    () => Array.from(new Set(['Emergency', 'ICU', 'Pediatrics', 'Surgery', 'Cardiology', 'Administration', ...employees.map((e) => e.department).filter(Boolean)])),
+    [employees]
+  )
+
   return (
     <>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
@@ -178,28 +244,68 @@ export default function EmployeesPage() {
                   <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-sm">Role</th>
                   <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-sm">Department</th>
                   <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-sm">Status</th>
+                  <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-sm text-right pr-4 md:pr-0">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((u) => (
-                  <tr key={u.id} className="border-b border-outline-variant/20 hover:bg-surface-variant/30">
-                    <td className="py-md px-4 md:px-0">
-                      <div className="flex items-center gap-sm">
-                        <Avatar src={u.avatar} initials={u.name.split(' ').map(n => n[0]).join('')} size="sm" />
-                        <div>
-                          <div className="font-label-md text-label-md font-bold text-on-surface">{u.name}</div>
-                          <div className="font-label-sm text-label-sm text-on-surface-variant">{u.email || `${u.name.toLowerCase().replace(/\s+/g, '.')}@stmarrys.health`}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-md"><Badge variant={u.role === 'admin' ? 'error' : 'neutral'}>{u.role}</Badge></td>
-                    <td className="py-md font-label-md text-label-md text-on-surface">{u.department || '—'}</td>
-                    <td className="py-md"><Badge variant="success">Active</Badge></td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
+                {loading && employees.length === 0 ? (
+                  <TableRowSkeleton rows={6} cols={5} />
+                ) : (
+                  visibleEmployees.map((u) => {
+                    const initials = (u.name || '?').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+                    const isBusy = busyId === u.id
+                    return (
+                      <tr key={u.id} className="border-b border-outline-variant/20 hover:bg-surface-variant/30">
+                        <td className="py-md px-4 md:px-0">
+                          <div className="flex items-center gap-sm">
+                            <Avatar src={u.avatar} initials={initials} size="sm" />
+                            <div>
+                              <div className="font-label-md text-label-md font-bold text-on-surface">{u.name}</div>
+                              <div className="font-label-sm text-label-sm text-on-surface-variant">{u.email || `${(u.name || '').toLowerCase().replace(/\s+/g, '.')}@stmarrys.health`}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-md"><Badge variant={u.role === 'admin' ? 'error' : 'neutral'}>{u.role}</Badge></td>
+                        <td className="py-md font-label-md text-label-md text-on-surface">{u.department || '—'}</td>
+                        <td className="py-md"><Badge variant="success">Active</Badge></td>
+                        <td className="py-md text-right pr-4 md:pr-0">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              onClick={() => setViewing(u)}
+                              disabled={isBusy}
+                              className="p-1.5 rounded-md text-on-surface-variant hover:text-primary hover:bg-primary/10 disabled:opacity-50 transition-colors"
+                              title="View profile"
+                              aria-label={`View ${u.name}`}
+                            >
+                              <span className="material-symbols-outlined text-[18px]">visibility</span>
+                            </button>
+                            <button
+                              onClick={() => startEdit(u)}
+                              disabled={isBusy}
+                              className="p-1.5 rounded-md text-on-surface-variant hover:text-primary hover:bg-primary/10 disabled:opacity-50 transition-colors"
+                              title="Edit"
+                              aria-label={`Edit ${u.name}`}
+                            >
+                              <span className="material-symbols-outlined text-[18px]">edit</span>
+                            </button>
+                            <button
+                              onClick={() => deleteEmployee(u)}
+                              disabled={isBusy}
+                              className="p-1.5 rounded-md text-on-surface-variant hover:text-error hover:bg-error/10 disabled:opacity-50 transition-colors"
+                              title="Remove"
+                              aria-label={`Remove ${u.name}`}
+                            >
+                              <span className="material-symbols-outlined text-[18px]">delete</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+                {!loading && filtered.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-12 text-center">
+                    <td colSpan={5} className="py-12 text-center">
                       {employees.length === 0 ? (
                         <EmptyState icon="people" title="No team members yet" description="Invite your first employee to get started." />
                       ) : (
@@ -217,6 +323,20 @@ export default function EmployeesPage() {
               </tbody>
             </table>
           </div>
+          {!loading && filtered.length > visibleLimit && (
+            <div className="mt-md flex flex-col items-center gap-1">
+              <p className="font-label-sm text-label-sm text-on-surface-variant">
+                Showing <span className="text-on-surface font-semibold">{visibleLimit}</span> of <span className="text-on-surface font-semibold">{filtered.length}</span> employees
+              </p>
+              <button
+                onClick={() => setVisibleLimit((n) => n + EMPLOYEE_PAGE_SIZE)}
+                className="btn-secondary text-xs py-1.5 px-3"
+              >
+                <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                Show {Math.min(EMPLOYEE_PAGE_SIZE, filtered.length - visibleLimit)} more
+              </button>
+            </div>
+          )}
         </Card>
       </section>
 
@@ -309,6 +429,87 @@ export default function EmployeesPage() {
           )}
         </div>
       </Drawer>
+
+      {/* View employee drawer */}
+      <Drawer open={!!viewing} onClose={() => setViewing(null)} title="Employee profile" subtitle={viewing?.title || viewing?.role || ''}>
+        {viewing && (() => {
+          const initials = (viewing.name || '?').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+          return (
+            <div className="p-md space-y-md">
+              <div className="flex items-center gap-md pb-md border-b border-outline-variant/30">
+                <Avatar src={viewing.avatar} initials={initials} size="xl" />
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-headline-md text-lg font-bold text-on-surface truncate">{viewing.name}</h3>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant truncate">{viewing.email}</p>
+                  <div className="mt-xs flex items-center gap-2">
+                    <Badge variant={viewing.role === 'admin' ? 'error' : 'neutral'}>{viewing.role}</Badge>
+                    <Badge variant="info">{viewing.department || 'Unassigned'}</Badge>
+                    <Badge variant="success">Active</Badge>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Title</div>
+                  <div className="font-label-md text-label-md text-on-surface">{viewing.title || '—'}</div>
+                </div>
+                <div>
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Manager</div>
+                  <div className="font-label-md text-label-md text-on-surface">{viewing.managerId || viewing.manager_id || '—'}</div>
+                </div>
+                <div>
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Certifications</div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {(viewing.certifications || []).length === 0 && <span className="font-label-md text-label-md text-on-surface">—</span>}
+                    {(viewing.certifications || []).map((c) => <Badge key={c} variant="info">{c}</Badge>)}
+                  </div>
+                </div>
+                <div>
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Hours this week</div>
+                  <div className="font-label-md text-label-md text-on-surface">{viewing.hoursThisWeek ?? viewing.hours_this_week ?? '—'}</div>
+                </div>
+              </div>
+
+              <div className="pt-sm border-t border-outline-variant/30 flex items-center justify-end gap-sm">
+                <button onClick={() => setViewing(null)} className="btn-ghost">Close</button>
+                <button onClick={() => { const v = viewing; setViewing(null); startEdit(v); }} className="btn-secondary">
+                  <span className="material-symbols-outlined text-[16px]">edit</span>
+                  Edit
+                </button>
+              </div>
+            </div>
+          )
+        })()}
+      </Drawer>
+
+      {/* Edit employee modal */}
+      <Modal open={!!editing} onClose={() => setEditing(null)} title="Edit employee" subtitle={editing?.name || ''}>
+        <form onSubmit={(e) => { e.preventDefault(); saveEdit() }} className="p-md space-y-md">
+          <div>
+            <label className="font-label-sm text-label-sm text-on-surface-variant">Full name</label>
+            <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="input-base mt-xs w-full" required />
+          </div>
+          <div>
+            <label className="font-label-sm text-label-sm text-on-surface-variant">Work email</label>
+            <input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className="input-base mt-xs w-full" required />
+          </div>
+          <div>
+            <label className="font-label-sm text-label-sm text-on-surface-variant">Department</label>
+            <Select value={editForm.department} onChange={(v) => setEditForm({ ...editForm, department: v })} options={[{ value: '', label: 'Unassigned' }, ...departments.map((d) => ({ value: d, label: d }))]} className="w-full mt-xs" />
+          </div>
+          <div>
+            <label className="font-label-sm text-label-sm text-on-surface-variant">Role</label>
+            <Select value={editForm.role} onChange={(v) => setEditForm({ ...editForm, role: v })} options={roles} className="w-full mt-xs" />
+          </div>
+          <div className="flex items-center justify-end gap-sm pt-sm border-t border-outline-variant/30">
+            <button type="button" onClick={() => setEditing(null)} className="btn-ghost">Cancel</button>
+            <button type="submit" disabled={busyId === editing?.id} className="btn-primary">
+              {busyId === editing?.id ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </>
   )
 }

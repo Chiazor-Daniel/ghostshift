@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useSearchParams } from 'react-router-dom'
 import { useUser } from '../layout/AppShell.jsx'
-import { Card, Badge, Drawer, EmptyState, Select } from '../components/ui.jsx'
+import { Card, Badge, Drawer, EmptyState, Select, ListSkeleton, Pagination } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 import { formatDate, timeLabel, today } from '../data/store.js'
@@ -30,6 +30,8 @@ export default function MarketplacePage() {
   const [drawerShift, setDrawerShift] = useState(null)
   const [editShift, setEditShift] = useState(null)
   const [requestModal, setRequestModal] = useState(null)
+  const [browsePage, setBrowsePage] = useState(1)
+  const [requestsPage, setRequestsPage] = useState(1)
   const toast = useToast()
   const { user: currentUser } = useUser()
   const isAdmin = currentUser?.role === 'admin'
@@ -46,7 +48,7 @@ export default function MarketplacePage() {
       setOpenShifts((shifts || []).filter(s => s.status === 'open'))
       setRequests(swaps || [])
     } catch (err) {
-      toast.push(err.message || 'Could not load marketplace', { tone: 'error' })
+      toast.push(err.message || 'Could not load shifts', { tone: 'error' })
     } finally {
       setLoading(false)
     }
@@ -126,12 +128,20 @@ export default function MarketplacePage() {
     return true
   })
 
+  useEffect(() => { setBrowsePage(1) }, [filter, dept, role])
+  useEffect(() => { setRequestsPage(1) }, [tab])
+
+  const BROWSE_PAGE_SIZE = 12
+  const REQUESTS_PAGE_SIZE = 9
+  const browsePageItems = filtered.slice((browsePage - 1) * BROWSE_PAGE_SIZE, browsePage * BROWSE_PAGE_SIZE)
+  const requestsPageItems = allRequests.slice((requestsPage - 1) * REQUESTS_PAGE_SIZE, requestsPage * REQUESTS_PAGE_SIZE)
+
   const slotsRemaining = (s) => Math.max(0, (s.required_staff || 1) - ((s.assigned_staff || []).length))
 
   return (
     <>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display-sm font-bold text-on-surface">Shift Marketplace</h1>
+        <h1 className="font-display-sm font-bold text-on-surface">Open Shifts</h1>
         {tab === 'requests' && myRequests.length > 0 && (
           <button
             onClick={() => { toast.push('Cleared request history', { tone: 'info' }) }}
@@ -194,13 +204,13 @@ export default function MarketplacePage() {
           </Card>
 
           {loading ? (
-            <div className="p-lg text-center text-on-surface-variant">Loading…</div>
+            <ListSkeleton variant="grid" count={6} />
           ) : filtered.length === 0 ? (
-            <EmptyState icon="storefront" title="No open shifts" description="No open shifts match your filters." />
+            <EmptyState icon="event" title="No open shifts" description="No open shifts match your filters." />
           ) : (
             <div className="grid grid-cols-1 gap-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filtered.map((s) => {
+                {browsePageItems.map((s) => {
                   const requested = myRequests.find((r) => r.from_shift_id === s.id)
                   const requiredStaff = s.required_staff || 1
                   const assignedCount = (s.assigned_staff || []).length
@@ -297,6 +307,7 @@ export default function MarketplacePage() {
                   )
                 })}
               </div>
+              <Pagination page={browsePage} pageSize={BROWSE_PAGE_SIZE} total={filtered.length} onChange={setBrowsePage} />
             </div>
           )}
         </section>
@@ -304,7 +315,9 @@ export default function MarketplacePage() {
 
       {tab === 'requests' && (
         <section className="page-section">
-          {allRequests.length === 0 ? (
+          {loading ? (
+            <ListSkeleton variant="grid" count={6} />
+          ) : allRequests.length === 0 ? (
             <EmptyState
               icon="assignment"
               title="No requests yet"
@@ -312,7 +325,7 @@ export default function MarketplacePage() {
             />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {allRequests.map((req) => {
+              {requestsPageItems.map((req) => {
                 const shift = openShifts.find(s => s.id === req.from_shift_id)
                 const displayRole = shift?.role || req.role || 'Shift request'
                 const displayDept = shift?.department || ''
@@ -369,6 +382,7 @@ export default function MarketplacePage() {
                   </Card>
                 )
               })}
+              <Pagination page={requestsPage} pageSize={REQUESTS_PAGE_SIZE} total={allRequests.length} onChange={setRequestsPage} />
             </div>
           )}
         </section>

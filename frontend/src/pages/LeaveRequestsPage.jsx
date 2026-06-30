@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Card, CardHeader, Badge, Drawer, EmptyState, Select } from '../components/ui.jsx'
+import { Card, CardHeader, Badge, Drawer, EmptyState, Select, ListSkeleton, Pagination } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { useUser } from '../layout/AppShell.jsx'
 import { realAPI } from '../services/realAPI.js'
@@ -21,6 +21,7 @@ export default function LeaveRequestsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [leaves, setLeaves] = useState([])
   const [loading, setLoading] = useState(false)
+  const [page, setPage] = useState(1)
   const [form, setForm] = useState({ type: 'vacation', startDate: '', endDate: '', reason: '' })
 
   useEffect(() => {
@@ -87,6 +88,12 @@ export default function LeaveRequestsPage() {
   const approved = leaves.filter((l) => l.status === 'approved')
   const declined = leaves.filter((l) => l.status === 'declined' || l.status === 'rejected')
 
+  const sortedLeaves = leaves
+    .slice()
+    .sort((a, b) => new Date(b.submitted_at || b.submittedAt) - new Date(a.submitted_at || a.submittedAt))
+  const PAGE_SIZE = 8
+  const pageLeaves = sortedLeaves.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
   return (
     <>
       <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
@@ -122,14 +129,12 @@ export default function LeaveRequestsPage() {
         <Card hover={false}>
           <CardHeader icon="event_busy" title={isAdmin ? 'All leave requests' : 'My leave requests'} />
           {loading ? (
-            <div className="p-lg text-center text-on-surface-variant">Loading…</div>
+            <div className="mt-md"><ListSkeleton variant="row" count={4} /></div>
           ) : leaves.length === 0 ? (
             <EmptyState icon="event_busy" title="No leave requests" description={isAdmin ? 'No employees have requested leave yet.' : 'You have not requested any leave yet.'} />
           ) : (
             <div className="space-y-sm mt-md">
-              {leaves
-                .sort((a, b) => new Date(b.submitted_at || b.submittedAt) - new Date(a.submitted_at || a.submittedAt))
-                .map((l) => (
+              {pageLeaves.map((l) => (
                   <div key={l.id} className="flex items-center gap-md p-md rounded-xl border border-outline-variant/30 hover:border-primary/40 transition-colors">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                       l.status === 'approved' ? 'bg-success/10 text-success' :
@@ -164,6 +169,7 @@ export default function LeaveRequestsPage() {
                     )}
                   </div>
                 ))}
+              <Pagination page={page} pageSize={PAGE_SIZE} total={sortedLeaves.length} onChange={setPage} />
             </div>
           )}
         </Card>

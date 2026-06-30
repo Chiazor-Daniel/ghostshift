@@ -178,8 +178,31 @@ def list_shifts(db: Session, user: User, args: Dict) -> Dict[str, Any]:
 
 
 def list_open_shifts(db: Session, user: User, args: Dict) -> Dict[str, Any]:
-    """Convenience: only open / unfilled shifts needing coverage."""
-    return list_shifts(db, user, {"status": "open", "limit": (args or {}).get("limit", 50)})
+    """Convenience: only open / unfilled shifts needing coverage.
+
+    Returns BOTH the full count (via SQL COUNT) and up to `limit` rows so the
+    assistant can answer "how many open shifts are there?" accurately even when
+    the org has thousands of rows.
+    """
+    args = args or {}
+    limit = min(int(args.get("limit") or 50), 200)
+    # Full count of open shifts (no limit) — matches the dashboard's KPI.
+    total_open = db.query(Shift).filter(
+        Shift.org_id == user.org_id, Shift.status == "open"
+    ).count()
+    rows = (
+        db.query(Shift)
+        .filter(Shift.org_id == user.org_id, Shift.status == "open")
+        .order_by(Shift.start_time.asc())
+        .limit(limit)
+        .all()
+    )
+    return _ok(
+        shifts=[_serialize_shift(s) for s in rows],
+        count=total_open,           # total open shifts in the org
+        returned=len(rows),         # rows actually included in `shifts`
+        limit=limit,
+    )
 
 
 def get_my_schedule(db: Session, user: User, args: Dict) -> Dict[str, Any]:
@@ -274,19 +297,44 @@ def get_burnout(db: Session, user: User, args: Dict) -> Dict[str, Any]:
 
 
 def get_org_overview(db: Session, user: User, args: Dict) -> Dict[str, Any]:
-    """One-shot summary of the org for the dashboard in the LLM's head."""
-    shifts = db.query(Shift).filter(Shift.org_id == user.org_id).limit(500).all()
-    swaps = db.query(SwapRequest).filter(SwapRequest.org_id == user.org_id).limit(500).all()
-    employees = db.query(User).filter(
+    """One-shot summary of the org for the dashboard in the LLM's head.
+
+    Uses SQL COUNT aggregates so numbers stay accurate even when the org has
+    thousands of shifts. The previous version loaded up to 500 rows and counted
+    in Python, which silently under-reported KPIs like open_shifts (e.g. 25
+    when the dashboard showed 261).
+    """
+    base = db.query(Shift).filter(Shift.org_id == user.org_id)
+    total_shifts = base.count()
+    open_shifts = base.filter(Shift.status == "open").count()
+    filled_shifts = base.filter(Shift.status.in_(("active", "scheduled", "confirmed", "completed"))).count()
+    coverage_gap = max(0, total_shifts - filled_shifts)
+
+    pending_swaps = db.query(SwapRequest).filter(
+        SwapRequest.org_id == user.org_id, SwapRequest.status == "pending"
+    ).count()
+
+    active_employees = db.query(User).filter(
         User.org_id == user.org_id, User.status == "active"
     ).count()
+
+    # Department breakdown: count shifts grouped by department.
+    dept_rows = (
+        db.query(Shift.department, db.func.count(Shift.id))
+        .filter(Shift.org_id == user.org_id, Shift.department.isnot(None))
+        .group_by(Shift.department)
+        .all()
+    )
+    by_department = {d: c for d, c in dept_rows if d}
+
     return _ok(
-        total_shifts=len(shifts),
-        open_shifts=sum(1 for s in shifts if s.status == "open"),
-        pending_swaps=sum(1 for s in swaps if s.status == "pending"),
-        active_employees=employees,
-        by_department={s.department: sum(1 for x in shifts if x.department == s.department)
-                       for s in shifts if s.department},
+        total_shifts=total_shifts,
+        open_shifts=open_shifts,
+        filled_shifts=filled_shifts,
+        coverage_gap=coverage_gap,
+        pending_swaps=pending_swaps,
+        active_employees=active_employees,
+        by_department=by_department,
     )
 
 
@@ -635,11 +683,14 @@ ALL_TOOLS: List[Tool] = [
     ),
     Tool(
         name="list_open_shifts",
-        description="Convenience: list shifts that still need coverage (status=open).",
+        description="List shifts that still need coverage (status=open). Returns the full "
+                    "matching count in the `count` field plus up to `limit` rows in `shifts`. "
+                    "For aggregate questions like 'how many open shifts are there?', prefer "
+                    "`get_org_overview` (returns pre-aggregated scalars).",
         parameters={
             "type": "object",
             "properties": {
-                "limit": {"type": "integer", "description": "max results (default 50)"},
+                "limit": {"type": "integer", "description": "max results (default 50, max 200)"},
             },
         },
         executor=list_open_shifts,

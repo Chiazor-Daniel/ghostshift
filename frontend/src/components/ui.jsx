@@ -124,6 +124,18 @@ export function Avatar({ src, initials = '?', size = 'md', status, className = '
     lg: 'w-3 h-3',
     xl: 'w-3.5 h-3.5',
   }
+  // Deterministic, pleasant background tint per initials so the initials avatar
+  // doesn't look grey in a sea of primary blue. Same algorithm as Slack/Notion.
+  const palette = [
+    'bg-primary/15 text-primary',
+    'bg-success/15 text-success',
+    'bg-warning/20 text-amber-700',
+    'bg-error/15 text-error',
+    'bg-info/15 text-sky-700',
+    'bg-secondary/20 text-purple-700',
+  ]
+  const paletteIdx = (initials || '?').split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % palette.length
+  const tint = palette[paletteIdx]
   return (
     <div className={`relative inline-flex flex-shrink-0 ${className}`}>
       {src ? (
@@ -135,7 +147,8 @@ export function Avatar({ src, initials = '?', size = 'md', status, className = '
         />
       ) : (
         <div
-          className={`${sizes[size]} rounded-full bg-surface-variant text-on-surface-variant flex items-center justify-center font-semibold border border-outline-variant/60`}
+          aria-label={initials}
+          className={`${sizes[size]} rounded-full ${tint} flex items-center justify-center font-bold border border-outline-variant/40 select-none`}
         >
           {initials}
         </div>
@@ -325,5 +338,160 @@ export function Select({ value, onChange, options = [], placeholder = 'Select...
         </div>
       )}
     </div>
+  )
+}
+
+// Pagination — numbered + prev/next controls with summary line. Renders nothing when total <= pageSize.
+export function Pagination({ page, pageSize, total, onChange, siblingCount = 1, className = '' }) {
+  if (!total || total <= pageSize) return null
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const safePage = Math.min(Math.max(1, page), totalPages)
+
+  const buildRange = () => {
+    const range = []
+    const left = Math.max(2, safePage - siblingCount)
+    const right = Math.min(totalPages - 1, safePage + siblingCount)
+    range.push(1)
+    if (left > 2) range.push('…')
+    for (let i = left; i <= right; i++) range.push(i)
+    if (right < totalPages - 1) range.push('…')
+    if (totalPages > 1) range.push(totalPages)
+    return range
+  }
+
+  const start = total === 0 ? 0 : (safePage - 1) * pageSize + 1
+  const end = Math.min(total, safePage * pageSize)
+
+  const go = (p) => onChange(Math.min(Math.max(1, p), totalPages))
+
+  const baseBtn = 'h-8 min-w-8 px-2 rounded-md text-body-sm font-medium flex items-center justify-center transition-all select-none'
+  const inactive = 'text-on-surface-variant hover:bg-surface-container'
+  const active = 'bg-primary text-on-primary shadow-soft'
+  const disabled = 'text-on-surface-variant/40 cursor-not-allowed'
+
+  return (
+    <div className={`flex flex-col items-center gap-2 mt-md ${className}`}>
+      <p className="font-label-sm text-label-sm text-on-surface-variant">
+        Showing <span className="text-on-surface font-semibold">{start}</span>–<span className="text-on-surface font-semibold">{end}</span> of <span className="text-on-surface font-semibold">{total}</span>
+      </p>
+      <nav className="flex items-center gap-1 flex-wrap justify-center" aria-label="Pagination">
+        <button
+          type="button"
+          onClick={() => go(safePage - 1)}
+          disabled={safePage === 1}
+          className={`${baseBtn} ${safePage === 1 ? disabled : inactive}`}
+          aria-label="Previous page"
+        >
+          <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+        </button>
+        {buildRange().map((p, i) =>
+          p === '…' ? (
+            <span key={`dots-${i}`} className="h-8 min-w-8 px-1 flex items-center justify-center text-on-surface-variant/60 text-body-sm">…</span>
+          ) : (
+            <button
+              key={p}
+              type="button"
+              onClick={() => go(p)}
+              aria-current={p === safePage ? 'page' : undefined}
+              className={`${baseBtn} ${p === safePage ? active : inactive}`}
+            >
+              {p}
+            </button>
+          )
+        )}
+        <button
+          type="button"
+          onClick={() => go(safePage + 1)}
+          disabled={safePage === totalPages}
+          className={`${baseBtn} ${safePage === totalPages ? disabled : inactive}`}
+          aria-label="Next page"
+        >
+          <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+        </button>
+      </nav>
+    </div>
+  )
+}
+
+// ListSkeleton — matching placeholders for the three list shapes we use across the app.
+export function ListSkeleton({ count = 4, variant = 'card' }) {
+  const items = Array.from({ length: count }, (_, i) => i)
+
+  if (variant === 'grid') {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-md">
+        {items.map((i) => (
+          <div key={i} className="rounded-2xl border border-outline-variant/40 bg-surface p-md space-y-3">
+            <div className="flex items-center justify-between">
+              <Skeleton w={70} h={20} />
+              <Skeleton w={60} h={20} />
+            </div>
+            <Skeleton w="70%" h={18} />
+            <Skeleton w="50%" h={14} />
+            <div className="pt-2 flex items-center gap-2">
+              <Skeleton w="40%" h={32} />
+              <Skeleton w="32%" h={32} />
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (variant === 'row') {
+    return (
+      <div className="space-y-2">
+        {items.map((i) => (
+          <div key={i} className="flex items-center gap-3 rounded-xl border border-outline-variant/40 bg-surface p-3">
+            <Skeleton w={40} h={40} className="rounded-full" />
+            <div className="flex-1 space-y-2">
+              <Skeleton w="55%" h={14} />
+              <Skeleton w="85%" h={12} />
+            </div>
+            <Skeleton w={56} h={24} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // default 'card' — used in EmployeePortal / Marketplace / swap cards
+  return (
+    <div className="space-y-3">
+      {items.map((i) => (
+        <div key={i} className="rounded-2xl border border-outline-variant/40 bg-surface p-md space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 flex-1">
+              <Skeleton w={44} h={44} className="rounded-full" />
+              <div className="flex-1 space-y-2">
+                <Skeleton w="55%" h={16} />
+                <Skeleton w="80%" h={12} />
+              </div>
+            </div>
+            <Skeleton w={70} h={22} />
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <Skeleton w={88} h={28} />
+            <Skeleton w={88} h={28} />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+export function TableRowSkeleton({ rows = 5, cols = 4 }) {
+  return (
+    <>
+      {Array.from({ length: rows }, (_, r) => (
+        <tr key={r} className="border-b border-outline-variant/30">
+          {Array.from({ length: cols }, (_, c) => (
+            <td key={c} className="px-md py-sm">
+              <Skeleton w={c === 0 ? '70%' : '90%'} h={14} />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
   )
 }

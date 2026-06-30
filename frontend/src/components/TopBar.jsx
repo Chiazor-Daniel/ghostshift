@@ -4,6 +4,16 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ROLES } from '../data/roles.js'
 import { useToast } from './Toast.jsx'
 import { MobileNavContext } from '../layout/AppShell.jsx'
+import { Avatar } from './ui.jsx'
+
+// First letter of first name + first letter of last name, uppercased.
+// "Aisha Patel" -> "AP". "Marcus" -> "MA". Falls back to "?".
+function initialsFor(name) {
+  if (!name) return '?'
+  const parts = String(name).trim().split(/\s+/)
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
 
 export default function TopBar({ user, activeRole, title, subtitle, actions }) {
   const mobileNav = useContext(MobileNavContext)
@@ -212,13 +222,9 @@ export default function TopBar({ user, activeRole, title, subtitle, actions }) {
           <button
             onClick={() => setShowMenu(!showMenu)}
             aria-label="Account menu"
-            className="w-9 h-9 rounded-full overflow-hidden border border-outline-variant/40 hover:ring-2 hover:ring-primary/40 transition-all"
+            className="rounded-full hover:ring-2 hover:ring-primary/40 transition-all"
           >
-            <img
-              src={user.avatar}
-              alt={user.name}
-              className="w-full h-full object-cover"
-            />
+            <Avatar src={user.avatar} initials={initialsFor(user.name)} size="md" />
           </button>
 
           <AnimatePresence>

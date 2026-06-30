@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Card, CardHeader, Badge } from '../components/ui.jsx'
+import { Card, CardHeader, Badge, ListSkeleton, Pagination } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 
@@ -29,6 +29,7 @@ function relativeTime(iso) {
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState([])
   const [filter, setFilter] = useState('all')
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const toast = useToast()
 
@@ -55,6 +56,11 @@ export default function NotificationsPage() {
     if (filter === 'unread') return notifications.filter((n) => !n.read_at && !n.readAt)
     return notifications
   }, [notifications, filter])
+
+  useEffect(() => { setPage(1) }, [filter])
+
+  const PAGE_SIZE = 12
+  const pageItems = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   async function handleToggleRead(n) {
     if (n.read_at || n.readAt) return
@@ -107,14 +113,14 @@ export default function NotificationsPage() {
               </div>
               <div className="divide-y divide-outline-variant/20">
                 {loading ? (
-                  <div className="px-4 py-12 text-center text-on-surface-variant">Loading…</div>
+                  <div className="p-md"><ListSkeleton variant="row" count={5} /></div>
                 ) : visible.length === 0 ? (
                   <div className="px-4 py-12 text-center">
                     <span className="material-symbols-outlined text-on-surface-variant text-[32px]">notifications_off</span>
                     <p className="mt-sm font-body-sm text-body-sm text-on-surface-variant">No notifications in this view</p>
                   </div>
                 ) : (
-                  visible.map((n, i) => {
+                  pageItems.map((n, i) => {
                     const isUnread = !n.read_at && !n.readAt
                     return (
                       <motion.div
@@ -139,6 +145,11 @@ export default function NotificationsPage() {
                       </motion.div>
                     )
                   })
+                )}
+                {!loading && visible.length > PAGE_SIZE && (
+                  <div className="px-4 py-3 border-t border-outline-variant/20">
+                    <Pagination page={page} pageSize={PAGE_SIZE} total={visible.length} onChange={setPage} />
+                  </div>
                 )}
               </div>
             </Card>
