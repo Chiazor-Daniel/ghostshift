@@ -453,15 +453,17 @@ def main():
         print("=" * 60)
         print("✅ Demo org ready!")
         print("=" * 60)
-    admin_password = None
-    employee_password = None
-    for u in users.values():
-        if u.email == ADMIN_EMAIL:
-            admin_password = "Demo1234!"
-        elif u.email == EMP_EMAIL:
-            employee_password = "Demo1234!"
-    print(f"  Admin   login: {ADMIN_EMAIL} / {admin_password or 'see output above'}")
-    print(f"  Employee login: {EMP_EMAIL} / {employee_password or 'see output above'}")
+        
+        admin_password = None
+        employee_password = None
+        for u in users.values():
+            if u.email == ADMIN_EMAIL:
+                admin_password = "Demo1234!"
+            elif u.email == EMP_EMAIL:
+                employee_password = "Demo1234!"
+                
+        print(f"  Admin   login: {ADMIN_EMAIL} / {admin_password or 'see output above'}")
+        print(f"  Employee login: {EMP_EMAIL} / {employee_password or 'see output above'}")
         print()
         print(f"  • {len(DEPARTMENTS)} departments")
         print(f"  • {len(EMPLOYEES)} employees")
