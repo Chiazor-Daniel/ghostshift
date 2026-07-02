@@ -107,36 +107,12 @@ if not _origins_env:
 origins = [o.strip() for o in _origins_env.split(",") if o.strip()]
 
 
-@app.middleware("http")
-async def cors_preflight_handler(request: Request, call_next):
-    """Short-circuit OPTIONS preflight requests with explicit CORS headers."""
-    if request.method == "OPTIONS":
-        origin = request.headers.get("origin")
-        if origin and origin in origins:
-            requested_headers = request.headers.get("access-control-request-headers", "*")
-            return JSONResponse(
-                status_code=200,
-                content={},
-                headers={
-                    "Access-Control-Allow-Origin": origin,
-                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-                    "Access-Control-Allow-Headers": requested_headers,
-                    "Access-Control-Allow-Credentials": "true",
-                    "Access-Control-Max-Age": "600",
-                    "Vary": "Origin",
-                },
-            )
-        return JSONResponse(status_code=400, content={"detail": "Origin not allowed"})
-    return await call_next(request)
-
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
 
 # Include routers
