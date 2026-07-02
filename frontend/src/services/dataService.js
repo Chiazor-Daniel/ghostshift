@@ -25,10 +25,20 @@ export function weekRange() {
 }
 
 export function formatDate(d) {
+  if (!d) return '';
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    const [y, m, day] = d.split('-').map(Number);
+    return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export function formatDateFull(d) {
+  if (!d) return '';
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    const [y, m, day] = d.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  }
   return new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import Logo from '../components/Logo.jsx'
-import { Select } from '../components/ui.jsx'
+import { Select, PasswordInput } from '../components/ui.jsx'
 import { useAuth } from '../hooks/useAuth.jsx'
 import { roleHome } from '../data/roles.js'
 import { realAPI } from '../services/realAPI.js'
@@ -19,11 +19,14 @@ const steps = [
 ]
 
 const orgTypes = [
-  { value: 'hospital', label: 'Hospital / Medical Center' },
-  { value: 'clinic', label: 'Clinic / Urgent Care' },
-  { value: 'nursing', label: 'Nursing Home / Long-term Care' },
-  { value: 'mental', label: 'Mental Health Facility' },
-  { value: 'other', label: 'Other Healthcare' },
+  { value: 'healthcare', label: 'Healthcare' },
+  { value: 'analytics', label: 'Analytics / Operations' },
+  { value: 'security', label: 'Security / Frontline' },
+  { value: 'hospitality', label: 'Hospitality' },
+  { value: 'manufacturing', label: 'Manufacturing' },
+  { value: 'education', label: 'Education' },
+  { value: 'retail', label: 'Retail' },
+  { value: 'other', label: 'Other' },
 ]
 
 const sizeOptions = [
@@ -42,6 +45,7 @@ export default function OnboardingPage() {
   const [data, setData] = useState({
     orgName: '',
     orgType: '',
+    orgTypeCustom: '',
     orgSize: '',
     location: '',
     adminName: '',
@@ -54,7 +58,16 @@ export default function OnboardingPage() {
 
   const update = (k, v) => setData((d) => ({ ...d, [k]: v }))
 
-  const next = () => setStep((s) => Math.min(s + 1, steps.length - 1))
+  const next = () => {
+    if (step === 2 && deptInput.trim()) {
+      const trimmed = deptInput.trim()
+      if (!data.departments.includes(trimmed)) {
+        update('departments', [...data.departments, trimmed])
+      }
+      setDeptInput('')
+    }
+    setStep((s) => Math.min(s + 1, steps.length - 1))
+  }
   const prev = () => setStep((s) => Math.max(s - 1, 0))
 
   const [submitting, setSubmitting] = useState(false)
@@ -67,20 +80,14 @@ export default function OnboardingPage() {
     try {
       const result = await signup({
         org_name: data.orgName,
-        org_type: data.orgType,
-        industry: 'healthcare',
-        size: data.orgSize,
-        city: data.location,
+        org_type: data.orgType === 'other' ? data.orgTypeCustom : data.orgType,
+        org_size: data.orgSize,
+        location: data.location,
+        departments: data.departments,
         admin_name: data.adminName,
         admin_email: data.adminEmail,
         admin_password: data.adminPassword,
       })
-      // Create departments (best effort, don't block login)
-      try {
-        for (const name of data.departments) {
-          await realAPI.createDepartment({ name }).catch(() => {})
-        }
-      } catch {}
       navigate(roleHome(result.user.role), { replace: true })
     } catch (err) {
       setSubmitError(err.message || 'Could not create organization')
@@ -91,9 +98,12 @@ export default function OnboardingPage() {
 
   const canNext = () => {
     switch (steps[step].id) {
-      case 'org': return data.orgName && data.orgType && data.orgSize
+      case 'org':
+        if (!data.orgName || !data.orgType || !data.orgSize) return false
+        if (data.orgType === 'other' && !data.orgTypeCustom.trim()) return false
+        return true
       case 'admin': return data.adminName && data.adminEmail && data.adminPassword
-      case 'departments': return data.departments.length > 0
+      case 'departments': return data.departments.length > 0 || deptInput.trim() !== ''
       case 'team': return data.staffPerDept && data.shiftPattern
       default: return true
     }
@@ -147,7 +157,7 @@ export default function OnboardingPage() {
               {step === 0 && (
                 <div className="space-y-md">
                   <h2 className="font-headline-lg text-headline-lg text-on-surface">Your organization</h2>
-                  <p className="font-body-md text-body-md text-on-surface-variant">Tell us about your healthcare facility.</p>
+                  <p className="font-body-md text-body-md text-on-surface-variant">Tell us about your organization.</p>
                   <div className="space-y-sm">
                     <div>
                       <label className="font-label-sm text-label-sm text-on-surface-variant">Organization name</label>
@@ -155,8 +165,23 @@ export default function OnboardingPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-md">
                       <div>
-                        <label className="font-label-sm text-label-sm text-on-surface-variant">Type</label>
-                        <Select value={data.orgType} onChange={(v) => update('orgType', v)} options={orgTypes} className="mt-xs" placeholder="Select type" />
+                        <label className="font-label-sm text-label-sm text-on-surface-variant">Type of organization</label>
+                        <input
+                          value={data.orgType === 'other' ? data.orgTypeCustom : data.orgType}
+                          onChange={(e) => {
+                            const val = e.target.value
+                            // If user starts typing a custom value, treat as custom
+                            if (orgTypes.find((t) => t.value === val && t.value !== 'other')) {
+                              update('orgType', val)
+                              update('orgTypeCustom', '')
+                            } else {
+                              update('orgType', 'other')
+                              update('orgTypeCustom', val)
+                            }
+                          }}
+                          className="input-base mt-xs"
+                          placeholder="e.g. Healthcare, Hospital, Retail…"
+                        />
                       </div>
                       <div>
                         <label className="font-label-sm text-label-sm text-on-surface-variant">Size</label>
@@ -182,11 +207,16 @@ export default function OnboardingPage() {
                     </div>
                     <div>
                       <label className="font-label-sm text-label-sm text-on-surface-variant">Work email</label>
-                      <input type="email" value={data.adminEmail} onChange={(e) => update('adminEmail', e.target.value)} className="input-base mt-xs" placeholder="marcus@hospital.org" />
+                      <input type="email" value={data.adminEmail} onChange={(e) => update('adminEmail', e.target.value)} className="input-base mt-xs" placeholder="marcus@yourteam.com" />
                     </div>
                     <div>
                       <label className="font-label-sm text-label-sm text-on-surface-variant">Password</label>
-                      <input type="password" value={data.adminPassword} onChange={(e) => update('adminPassword', e.target.value)} className="input-base mt-xs" placeholder="Minimum 8 characters" />
+                      <PasswordInput
+                        value={data.adminPassword}
+                        onChange={(e) => update('adminPassword', e.target.value)}
+                        className="input-base mt-xs"
+                        placeholder="Minimum 8 characters"
+                      />
                     </div>
                   </div>
                 </div>
@@ -271,7 +301,7 @@ export default function OnboardingPage() {
                   <div className="space-y-sm rounded-xl bg-surface-variant/50 p-md">
                     {[
                       ['Organization', data.orgName],
-                      ['Type', orgTypes.find((t) => t.value === data.orgType)?.label],
+                      ['Type', data.orgType === 'other' ? data.orgTypeCustom : orgTypes.find((t) => t.value === data.orgType)?.label],
                       ['Size', sizeOptions.find((s) => s.value === data.orgSize)?.label],
                       ['Location', data.location],
                       ['Admin', data.adminName],
@@ -338,7 +368,7 @@ export default function OnboardingPage() {
             Work shouldn't burn you out.
           </h1>
           <p className="mt-md font-body-lg text-body-lg opacity-90 leading-relaxed">
-            The intelligent shift-swap and burnout-prediction platform trusted by 200+ healthcare teams.
+            The intelligent shift-swap and burnout-prediction platform trusted by 200+ shift-based teams.
           </p>
           <div className="mt-xl space-y-sm">
             {[
@@ -354,7 +384,7 @@ export default function OnboardingPage() {
           </div>
         </div>
         <div className="font-label-sm text-label-sm opacity-70">
-          SOC 2 · HIPAA · ISO 27001
+          SOC 2 · ISO 27001 · GDPR-ready
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 """Organization routes."""
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, status, Depends
 from sqlalchemy.orm import Session
@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 def _oid() -> str:
-    return f"dept_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(4)}"
+    return f"dept_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}"
 
 
 @router.get("/")
@@ -49,7 +49,7 @@ async def update_organization(request: Request, payload: dict, db: Session = Dep
     if payload:
         org.settings = settings
 
-    org.updated_at = datetime.utcnow()
+    org.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(org)
     return _serialize_org(org)
@@ -104,7 +104,7 @@ async def create_department(request: Request, payload: dict, db: Session = Depen
         name=name,
         description=payload.get("description"),
         manager_id=payload.get("manager_id"),
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(dept)
     db.commit()
@@ -124,10 +124,25 @@ async def update_department(request: Request, dept_id: str, payload: dict,
     for k in ("name", "description", "manager_id", "headcount", "budget"):
         if k in payload and payload[k] is not None:
             setattr(dept, k, payload[k])
-    dept.updated_at = datetime.utcnow()
+    dept.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(dept)
     return _serialize_dept(dept)
+
+
+@router.delete("/departments/{dept_id}")
+async def delete_department(request: Request, dept_id: str, db: Session = Depends(get_db)):
+    user = await get_current_user(request, db)
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    dept = db.query(Department).filter(
+        Department.id == dept_id, Department.org_id == user.org_id
+    ).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found")
+    db.delete(dept)
+    db.commit()
+    return {"message": "Department deleted", "id": dept_id}
 
 
 def _serialize_dept(d: Department) -> dict:

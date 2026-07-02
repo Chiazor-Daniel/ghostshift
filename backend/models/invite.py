@@ -4,7 +4,7 @@ Invite Model - Employee invitations
 
 from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Enum
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from config.database import Base
 import enum
 
@@ -29,11 +29,11 @@ class Invite(Base):
     name = Column(String(255))
     status = Column(String(20), default="pending", nullable=False, index=True)
     token = Column(String(255), unique=True, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
-    accepted_at = Column(DateTime)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    accepted_at = Column(DateTime(timezone=True))
     password_hash = Column(String(255))  # pre-set when invite is auto-accepted
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     organization = relationship("Organization")

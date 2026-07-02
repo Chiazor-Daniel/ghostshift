@@ -77,12 +77,12 @@ export function StatCard({ label, value, change, changeType, icon, className = '
 
 export function Badge({ children, variant = 'neutral', className = '' }) {
   const variants = {
-    neutral: 'bg-surface-variant text-on-surface-variant',
-    primary: 'bg-primary/10 text-primary',
-    success: 'bg-success/10 text-success',
-    warning: 'bg-warning/15 text-warning',
-    error: 'bg-error/10 text-error',
-    info: 'bg-accent/10 text-accent',
+    neutral: 'bg-surface-variant text-on-surface-variant border border-outline-variant/30',
+    primary: 'bg-primary/10 text-primary border border-primary/20',
+    success: 'bg-success/10 text-success border border-success/20',
+    warning: 'bg-warning/15 text-warning border border-warning/20',
+    error: 'bg-error/10 text-error border border-error/20',
+    info: 'bg-accent/10 text-accent border border-accent/20',
   }
   return <span className={`chip ${variants[variant]} ${className}`}>{children}</span>
 }
@@ -177,32 +177,50 @@ export function Modal({ open, onClose, children, title, subtitle, maxWidth = 'ma
   }, [open, onClose])
 
   if (!open) return null
-  const mw = size === 'lg' ? 'max-w-2xl' : size === 'xl' ? 'max-w-4xl' : maxWidth
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-md bg-on-surface/45 backdrop-blur-sm">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0" onClick={onClose} />
-      <motion.div
-        role="dialog"
-        aria-modal="true"
-        initial={{ scale: 0.97, opacity: 0, y: 10 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        transition={{ duration: 0.18, ease: 'easeOut' }}
-        className={`relative bg-surface rounded-xl shadow-soft-xl w-full ${mw} max-h-[90vh] overflow-hidden flex flex-col`}
-      >
-        {(title || subtitle) && (
-          <div className="px-lg py-md border-b border-outline-variant/60 flex items-start justify-between">
-            <div>
-              {title && <h2 className="font-headline-md text-lg font-semibold text-on-surface">{title}</h2>}
-              {subtitle && <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">{subtitle}</p>}
+    const mw = size === 'md' ? 'max-w-xl' : size === 'lg' ? 'max-w-2xl' : size === 'xl' ? 'max-w-4xl' : maxWidth
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-md bg-on-surface/45 backdrop-blur-sm">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0" onClick={onClose} />
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          initial={{ scale: 0.97, opacity: 0, y: 10 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          className={`relative bg-surface rounded-xl shadow-soft-xl w-full ${mw} max-h-[90vh] overflow-hidden flex flex-col`}
+        >
+          {(title || subtitle) && (
+            <div className="px-6 py-4 md:px-lg md:py-md border-b border-outline-variant/60 flex items-start justify-between">
+              <div>
+                {title && <h2 className="font-headline-md text-lg font-semibold text-on-surface">{title}</h2>}
+                {subtitle && <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">{subtitle}</p>}
+              </div>
+              <button onClick={onClose} aria-label="Close" className="btn-icon">
+                <span className="material-symbols-outlined">close</span>
+              </button>
             </div>
-            <button onClick={onClose} aria-label="Close" className="btn-icon">
-              <span className="material-symbols-outlined">close</span>
-            </button>
-          </div>
-        )}
-        <div className="flex-1 overflow-y-auto scrollbar-thin">{children}</div>
-      </motion.div>
-    </div>
+          )}
+          <div className="flex-1 overflow-y-auto scrollbar-thin p-6 md:p-lg">{children}</div>
+        </motion.div>
+      </div>
+    )
+}
+
+export function ConfirmDialog({ open, onClose, onConfirm, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', tone = 'primary', loading, children }) {
+  const color = tone === 'danger' ? 'bg-error text-on-error hover:bg-error/90' : 'bg-primary text-on-primary hover:bg-primary/90'
+  return (
+    <Modal open={open} onClose={onClose} title={title || 'Confirm'} maxWidth="max-w-sm">
+      <div className="p-lg">
+        <p className="font-body-md text-body-md text-on-surface mb-lg">{message || 'Are you sure?'}</p>
+        {children}
+        <div className="flex items-center justify-end gap-sm mt-4">
+          <button onClick={onClose} className="btn-secondary py-sm px-md" disabled={loading}>{cancelLabel}</button>
+          <button onClick={onConfirm} className={`btn-primary py-sm px-md ${color}`} disabled={loading}>
+            {loading ? 'Processing...' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -493,5 +511,99 @@ export function TableRowSkeleton({ rows = 5, cols = 4 }) {
         </tr>
       ))}
     </>
+  )
+}
+
+export function RichListItem({ title, subtitle, status, statusIcon, icon, iconColor = 'primary', meta, details = [], actions, onClick, className = '' }) {
+  const iconColors = {
+    primary: 'bg-primary/10 text-primary',
+    success: 'bg-success/10 text-success',
+    warning: 'bg-warning/10 text-warning',
+    error: 'bg-error/10 text-error',
+    neutral: 'bg-surface-variant text-on-surface-variant',
+  }
+
+  return (
+    <div
+      onClick={onClick}
+      className={`p-md rounded-xl border border-outline-variant/30 bg-surface/50 transition-all duration-300 ${onClick ? 'cursor-pointer hover:shadow-soft-md hover:-translate-y-0.5 hover:border-primary/40 hover:bg-surface' : ''} ${className}`}
+    >
+      <div className="flex items-start justify-between gap-md">
+        <div className="flex items-start gap-md min-w-0">
+          {icon && (
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${iconColors[iconColor] || iconColors.primary}`}>
+              <span className="material-symbols-outlined text-[20px]">{icon}</span>
+            </div>
+          )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-sm flex-wrap">
+              <span className="font-label-md text-label-md font-bold text-on-surface truncate">{title}</span>
+              {status && <Badge variant={status.variant || 'neutral'}>{status.label}</Badge>}
+            </div>
+            {subtitle && <div className="font-label-sm text-label-sm text-on-surface-variant mt-0.5">{subtitle}</div>}
+            {meta && <div className="font-body-sm text-body-sm text-on-surface-variant mt-1">{meta}</div>}
+          </div>
+        </div>
+        {statusIcon && (
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${statusIcon.color || 'bg-surface-variant text-on-surface-variant'}`}>
+            <span className="material-symbols-outlined text-[20px]">{statusIcon.icon}</span>
+          </div>
+        )}
+      </div>
+
+      {details.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-surface-variant/30 mt-3">
+          {details.map((d, i) => (
+            <div key={i}>
+              <div className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">{d.label}</div>
+              <div className="font-label-md text-label-md font-bold text-on-surface mt-1">{d.value}</div>
+              {d.sub && <div className="font-label-sm text-label-sm text-on-surface-variant">{d.sub}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {actions && actions.length > 0 && (
+        <div className="mt-4 flex items-center gap-3 flex-wrap">
+          {actions.map((a, i) => (
+            <button
+              key={i}
+              onClick={(e) => { e.stopPropagation(); a.onClick?.() }}
+              disabled={a.disabled}
+              className={`${a.primary ? 'btn-primary' : a.danger ? 'btn-ghost text-error hover:bg-error/10' : 'btn-secondary'} py-xs px-sm text-xs disabled:opacity-60 inline-flex items-center gap-1`}
+            >
+              {a.icon && <span className="material-symbols-outlined text-[14px]">{a.icon}</span>}
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function PasswordInput({ value, onChange, ...props }) {
+  const [visible, setVisible] = useState(false)
+  return (
+    <div className="relative">
+      <input
+        {...props}
+        type={visible ? 'text' : 'password'}
+        value={value}
+        onChange={onChange}
+        className={`${props.className || 'input-base'} pr-10`}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? 'Hide password' : 'Show password'}
+        title={visible ? 'Hide password' : 'Show password'}
+        className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-md text-on-surface-variant hover:text-primary hover:bg-surface-variant/40 transition-colors"
+      >
+        <span className="material-symbols-outlined text-[18px]">
+          {visible ? 'visibility_off' : 'visibility'}
+        </span>
+      </button>
+    </div>
   )
 }

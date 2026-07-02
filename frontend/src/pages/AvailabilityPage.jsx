@@ -225,7 +225,7 @@ function TeamOverview() {
   }, [])
 
   const heatmapData = useMemo(() => {
-    return (employees || []).slice(0, 12).map((emp) => {
+    return (employees || []).filter((e) => e.role !== 'admin').slice(0, 12).map((emp) => {
       const dayScores = Array.from({ length: 7 }, (_, day) =>
         SLOTS.map((_, slot) => {
           const slotTimes = SLOTS[slot]
@@ -314,7 +314,8 @@ function CoverageGaps() {
       const required = s.required_staff || 1
       const assigned = (s.assigned_staff || []).length
       if (assigned < required) {
-        const dt = new Date(s.date)
+        const [y, m, d] = s.date.split('-').map(Number)
+        const dt = new Date(y, m - 1, d)
         const day = dayNames[dt.getDay()]
         const ratio = assigned / required
         const severity = ratio < 0.4 ? 'critical' : ratio < 0.7 ? 'high' : ratio < 1 ? 'medium' : 'low'
@@ -350,7 +351,7 @@ function CoverageGaps() {
         </Card>
         <Card hover>
           <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Team size</div>
-          <div className="font-display-lg text-display-lg font-bold text-primary mt-1">{employees.length}</div>
+          <div className="font-display-lg text-display-lg font-bold text-primary mt-1">{employees.filter((e) => e.role !== 'admin').length}</div>
           <div className="font-label-sm text-label-sm text-on-surface-variant">available to cover</div>
         </Card>
       </div>

@@ -22,5 +22,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()" || exit 1
 
-# Render sets $PORT at runtime; fall back to 8000 for local docker run
+# Render sets $PORT at runtime; fall back to 8000 for local docker run.
+# Do NOT run alembic here — run migrations as a separate Render deploy hook or manually.
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]

@@ -19,9 +19,11 @@ import InsightsPage from './pages/InsightsPage.jsx'
 import EmployeesPage from './pages/EmployeesPage.jsx'
 import AdminPage from './pages/AdminPage.jsx'
 import NotificationsPage from './pages/NotificationsPage.jsx'
-import SupportPage from './pages/SupportPage.jsx'
 import AcceptInvitePage from './pages/AcceptInvitePage.jsx'
 import LeaveRequestsPage from './pages/LeaveRequestsPage.jsx'
+import MySwapsPage from './pages/MySwapsPage.jsx'
+import AttendancePage from './pages/AttendancePage.jsx'
+import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx'
 function PageTransition({ children }) {
   return <AnimatePresence mode="wait">{children}</AnimatePresence>
 }
@@ -82,8 +84,8 @@ export default function App() {
     employees: ['admin'],
     admin: ['admin'],
     notifications: ['employee', 'admin'],
-    support: ['employee', 'admin'],
     leaves: ['employee', 'admin'],
+    attendance: ['admin'],
   }
 
   return (
@@ -94,6 +96,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<OnboardingPage />} />
         <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
         <Route
           path="/app/*"
@@ -105,14 +108,19 @@ export default function App() {
                   <Route path="dashboard" element={<GuardedRoute roles={routeRoles.dashboard} activeRole={activeRole}><DashboardPage /></GuardedRoute>} />
                   <Route path="employee" element={<GuardedRoute roles={routeRoles.employee} activeRole={activeRole}><EmployeePortal /></GuardedRoute>} />
                   <Route path="marketplace" element={<GuardedRoute roles={routeRoles.marketplace} activeRole={activeRole}><MarketplacePage /></GuardedRoute>} />
+                  <Route path="my-swaps" element={<GuardedRoute roles={['employee']} activeRole={activeRole}><MySwapsPage /></GuardedRoute>} />
+                  <Route path="shifts" element={<Navigate to="/app/marketplace" replace />} />
                   <Route path="swaps" element={<GuardedRoute roles={routeRoles.swaps} activeRole={activeRole}><SwapRequestsPage /></GuardedRoute>} />
+                  <Route path="swap-requests" element={<Navigate to="/app/swaps" replace />} />
                   <Route path="availability" element={<GuardedRoute roles={routeRoles.availability} activeRole={activeRole}><AvailabilityPage /></GuardedRoute>} />
                   <Route path="insights" element={<GuardedRoute roles={routeRoles.insights} activeRole={activeRole}><InsightsPage /></GuardedRoute>} />
                   <Route path="employees" element={<GuardedRoute roles={routeRoles.employees} activeRole={activeRole}><EmployeesPage /></GuardedRoute>} />
                   <Route path="admin" element={<GuardedRoute roles={routeRoles.admin} activeRole={activeRole}><AdminPage /></GuardedRoute>} />
                   <Route path="notifications" element={<GuardedRoute roles={routeRoles.notifications} activeRole={activeRole}><NotificationsPage /></GuardedRoute>} />
-                  <Route path="support" element={<GuardedRoute roles={routeRoles.support} activeRole={activeRole}><SupportPage /></GuardedRoute>} />
                   <Route path="leaves" element={<GuardedRoute roles={routeRoles.leaves} activeRole={activeRole}><LeaveRequestsPage /></GuardedRoute>} />
+                  <Route path="attendance" element={<GuardedRoute roles={routeRoles.attendance} activeRole={activeRole}><AttendancePage /></GuardedRoute>} />
+                  <Route path="assistant" element={<Navigate to="/app/dashboard" replace />} />
+                  <Route path="support" element={<Navigate to="/app/dashboard" replace />} />
                 </Routes>
               </AppShell>
             </RequireAuth>

@@ -18,16 +18,21 @@ export default function EmployeesPage() {
   const [invites, setInvites] = useState([])
   const [query, setQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
+  const [deptFilter, setDeptFilter] = useState('all')  // Clickable dept-card filter
   const [showModal, setShowModal] = useState(false)
   const [viewing, setViewing] = useState(null)        // employee being viewed
   const [editing, setEditing] = useState(null)        // employee being edited
   const [editForm, setEditForm] = useState({ name: '', email: '', role: 'employee', department: '' })
   const [busyId, setBusyId] = useState(null)         // row currently being mutated
+  const [inviting, setInviting] = useState(false)   // "Create invites" submit in flight
+  const [inviteErrors, setInviteErrors] = useState([])  // inline error display
   const emptyRow = () => ({ name: '', email: '', department: '', role: 'employee' })
   const [rows, setRows] = useState([emptyRow()])
   const [createdInvites, setCreatedInvites] = useState([])
   const [loading, setLoading] = useState(false)
   const [visibleLimit, setVisibleLimit] = useState(10)
+  const [shifts, setShifts] = useState([])
+  const [depts, setDepts] = useState([])
   const EMPLOYEE_PAGE_SIZE = 10
 
   useEffect(() => {
@@ -37,9 +42,11 @@ export default function EmployeesPage() {
   async function refresh() {
     setLoading(true)
     try {
-      const [emps, invs] = await Promise.all([realAPI.getEmployees(), realAPI.getInvites()])
+      const [emps, invs, sh, d] = await Promise.all([realAPI.getEmployees(), realAPI.getInvites(), realAPI.getShifts(), realAPI.getDepartments()])
       setEmployees(emps || [])
       setInvites(invs || [])
+      setShifts(sh || [])
+      setDepts(d || [])
     } catch (err) {
       toast.push(err.message || 'Could not load employees', { tone: 'error' })
     } finally {
@@ -47,20 +54,30 @@ export default function EmployeesPage() {
     }
   }
 
+  // Admins are not staff; exclude them from the team directory and stats.
+  const staff = useMemo(() => employees.filter((u) => u.role !== 'admin'), [employees])
+
   const filtered = useMemo(() => {
-    return employees.filter((u) => {
+    return staff.filter((u) => {
       if (roleFilter !== 'all' && u.role !== roleFilter) return false
+      if (deptFilter !== 'all' && (u.department || '') !== deptFilter) return false
       if (!query) return true
       const q = query.toLowerCase()
       return u.name.toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)
     })
-  }, [employees, query, roleFilter])
+  }, [staff, query, roleFilter, deptFilter])
 
-  useEffect(() => { setVisibleLimit(EMPLOYEE_PAGE_SIZE) }, [query, roleFilter])
+  useEffect(() => { setVisibleLimit(EMPLOYEE_PAGE_SIZE) }, [query, roleFilter, deptFilter])
 
   const visibleEmployees = filtered.slice(0, visibleLimit)
 
-  const pendingInvites = useMemo(() => invites.filter((i) => i.status === 'pending'), [invites])
+  const recentInvites = useMemo(
+    // Show last 10 accepted invites so the admin can see who they onboarded
+    () => invites
+      .filter((i) => i.status === 'accepted')
+      .slice(0, 10),
+    [invites]
+  )
 
   function updateRow(index, patch) {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)))
@@ -76,11 +93,14 @@ export default function EmployeesPage() {
 
   async function handleAddInvite(e) {
     e.preventDefault()
+    if (inviting) return
     const validRows = rows.filter((r) => r.name.trim() && r.email.trim())
     if (validRows.length === 0) {
       toast.push('Fill in at least one name and email.', { tone: 'warning' })
       return
     }
+    setInviting(true)
+    setInviteErrors([])
 
     const created = []
     const errors = []
@@ -94,20 +114,24 @@ export default function EmployeesPage() {
         })
         created.push({ ...result.invite, temp_password: result.created_user?.temp_password })
       } catch (err) {
-        errors.push(`${r.email}: ${err.message}`)
+        const errorMsg = `${r.email}: ${err.message}`
+        errors.push(errorMsg)
+        toast.push(errorMsg, { tone: 'error' })
       }
     }
 
-    if (errors.length > 0) {
-      errors.forEach((err) => toast.push(err, { tone: 'error' }))
-    }
+    setInviteErrors(errors)
 
     if (created.length > 0) {
       await refresh()
       setCreatedInvites(created)
       setRows([emptyRow()])
       toast.push(`${created.length} invite${created.length === 1 ? '' : 's'} created.`, { tone: 'success' })
+    } else if (errors.length > 0) {
+      // All invites failed - keep modal open but show errors prominently
+      toast.push('Failed to create invites. See errors above.', { tone: 'error' })
     }
+    setInviting(false)
   }
 
   function copyLink(token) {
@@ -174,17 +198,62 @@ export default function EmployeesPage() {
     }
   }
 
+  // Department list with per-dept stats. Coverage = (assigned slots / required slots)
+  // across all upcoming shifts for that department. Depts with 0 shifts show —.
+  const departmentStats = useMemo(() => {
+    const deptNames = Array.from(new Set([
+      ...depts.map((d) => d.name),
+      ...staff.map((e) => e.department).filter(Boolean),
+    ])).filter(Boolean)
+    return deptNames.map((dept) => {
+      const memberCount = staff.filter((e) => (e.department || '') === dept).length
+      const deptShifts = shifts.filter((s) => (s.department || '') === dept)
+      // For each shift, fraction filled = assigned_staff / required_staff (capped 0..1)
+      const coveragePct = deptShifts.length === 0
+        ? null
+        : Math.round(
+            (deptShifts.reduce((acc, s) => {
+              const required = s.required_staff || 1
+              const filled = Math.min(required, (s.assigned_staff || []).length || (s.employee_id ? 1 : 0))
+              return acc + (filled / required)
+            }, 0) / deptShifts.length) * 100
+          )
+      return { name: dept, memberCount, shiftCount: deptShifts.length, coveragePct }
+    }).sort((a, b) => b.memberCount - a.memberCount)
+  }, [employees, shifts])
+
   const departments = useMemo(
-    () => Array.from(new Set(['Emergency', 'ICU', 'Pediatrics', 'Surgery', 'Cardiology', 'Administration', ...employees.map((e) => e.department).filter(Boolean)])),
-    [employees]
+    () => departmentStats.map((d) => d.name),
+    [departmentStats]
   )
+
+  function coverageTone(pct) {
+    if (pct == null) return 'neutral'
+    if (pct >= 90) return 'success'
+    if (pct >= 70) return 'warning'
+    return 'error'
+  }
+
+  function coverageBg(tone) {
+    if (tone === 'success') return 'bg-success/10 border-success/30'
+    if (tone === 'warning') return 'bg-warning/10 border-warning/30'
+    if (tone === 'error') return 'bg-error/10 border-error/30'
+    return 'bg-surface-variant/30 border-outline-variant/30'
+  }
+
+  function coverageText(tone) {
+    if (tone === 'success') return 'text-success'
+    if (tone === 'warning') return 'text-warning'
+    if (tone === 'error') return 'text-error'
+    return 'text-on-surface-variant'
+  }
 
   return (
     <>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="font-display-sm font-bold text-on-surface">Employees</h1>
-          <p className="font-body-md text-body-md text-on-surface-variant">{employees.length} team members · {pendingInvites.length} pending invite{pendingInvites.length === 1 ? '' : 's'}</p>
+          <p className="font-body-md text-body-md text-on-surface-variant">{staff.length} team members · {recentInvites.length} recently joined</p>
         </div>
         <button onClick={() => setShowModal(true)} className="btn-primary">
           <span className="material-symbols-outlined text-[18px]">person_add</span>
@@ -193,9 +262,12 @@ export default function EmployeesPage() {
       </div>
 
       <section className="page-section space-y-md">
-        {pendingInvites.length > 0 && (
+        {recentInvites.length > 0 && (
           <Card hover={false}>
-            <h2 className="font-headline-sm text-headline-sm font-semibold text-on-surface mb-md">Pending invites</h2>
+            <h2 className="font-headline-sm text-headline-sm font-semibold text-on-surface mb-md">Recently invited</h2>
+            <p className="font-body-sm text-body-sm text-on-surface-variant -mt-sm mb-md">
+              Newest members added to your team via invite. They can sign in with their email and the temporary password you saved.
+            </p>
             <div className="overflow-x-auto -mx-4 md:mx-0">
               <table className="w-full min-w-[600px]">
                 <thead>
@@ -204,21 +276,25 @@ export default function EmployeesPage() {
                     <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-sm">Email</th>
                     <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-sm">Role</th>
                     <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-sm">Department</th>
-                    <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-sm"></th>
+                    <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-sm">Status</th>
+                    <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-sm text-right pr-4 md:pr-0">Invite link</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingInvites.map((i) => (
+                  {recentInvites.map((i) => (
                     <tr key={i.id} className="border-b border-outline-variant/20 hover:bg-surface-variant/30">
                       <td className="py-md px-4 md:px-0 font-label-md text-label-md font-semibold text-on-surface">{i.name || '—'}</td>
                       <td className="py-md text-on-surface-variant">{i.email}</td>
                       <td className="py-md"><Badge variant={i.role === 'admin' ? 'error' : 'neutral'}>{i.role}</Badge></td>
                       <td className="py-md font-label-md text-label-md text-on-surface">{i.department || '—'}</td>
-                      <td className="py-md text-right">
-                        <button onClick={() => copyLink(i.token)} className="btn-secondary text-sm py-1.5 px-3">
-                          <span className="material-symbols-outlined text-[16px]">content_copy</span>
-                          Copy link
-                        </button>
+                      <td className="py-md"><Badge variant="success">Joined</Badge></td>
+                      <td className="py-md text-right pr-4 md:pr-0">
+                        {i.token ? (
+                          <button onClick={() => copyLink(i.token)} className="btn-secondary text-sm py-1.5 px-3">
+                            <span className="material-symbols-outlined text-[16px]">content_copy</span>
+                            Copy link
+                          </button>
+                        ) : <span className="text-on-surface-variant/60 text-sm">—</span>}
                       </td>
                     </tr>
                   ))}
@@ -230,7 +306,67 @@ export default function EmployeesPage() {
 
         <Card hover={false}>
           <div className="flex items-center justify-between mb-md flex-wrap gap-sm">
-            <h2 className="font-headline-sm text-headline-sm font-semibold text-on-surface">Team members</h2>
+            <div>
+              <h2 className="font-headline-sm text-headline-sm font-semibold text-on-surface">Departments</h2>
+              <p className="font-label-sm text-label-sm text-on-surface-variant mt-0.5">
+                Click a department to filter the team list below. Coverage = open + filled shift slots.
+              </p>
+            </div>
+            {deptFilter !== 'all' && (
+              <button onClick={() => setDeptFilter('all')} className="btn-secondary text-xs">
+                <span className="material-symbols-outlined text-[14px]">close</span>
+                Clear filter
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+            {departmentStats.map((d) => {
+              const isActive = deptFilter === d.name
+              const tone = coverageTone(d.coveragePct)
+              return (
+                <button
+                  key={d.name}
+                  onClick={() => setDeptFilter(isActive ? 'all' : d.name)}
+                  className={`text-left p-4 rounded-xl border-2 transition-all ${
+                    isActive
+                      ? 'border-primary bg-primary/5 shadow-soft-sm'
+                      : `border-transparent ${coverageBg(tone)} hover:scale-[1.02]`
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`w-2 h-2 rounded-full ${
+                      tone === 'success' ? 'bg-success' :
+                      tone === 'warning' ? 'bg-warning' :
+                      tone === 'error' ? 'bg-error' : 'bg-on-surface-variant/40'
+                    }`} />
+                    {isActive && (
+                      <span className="material-symbols-outlined text-primary text-[16px]">check_circle</span>
+                    )}
+                  </div>
+                  <div className="font-headline-sm text-headline-sm font-bold text-on-surface truncate" title={d.name}>
+                    {d.name}
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span className={`font-headline-md text-headline-md font-bold ${coverageText(tone)}`}>
+                      {d.coveragePct == null ? '—' : `${d.coveragePct}%`}
+                    </span>
+                    <span className="font-label-sm text-label-sm text-on-surface-variant">coverage</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between font-label-sm text-label-sm text-on-surface-variant">
+                    <span>{d.memberCount} member{d.memberCount === 1 ? '' : 's'}</span>
+                    <span>{d.shiftCount} shift{d.shiftCount === 1 ? '' : 's'}</span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </Card>
+
+        <Card hover={false}>
+          <div className="flex items-center justify-between mb-md flex-wrap gap-sm">
+            <h2 className="font-headline-sm text-headline-sm font-semibold text-on-surface">
+              Team members{deptFilter !== 'all' && <span className="ml-2 chip bg-primary/10 text-primary text-[10px]">{deptFilter}</span>}
+            </h2>
             <div className="flex items-center gap-md">
               <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search employees..." className="input-base" />
               <Select value={roleFilter} onChange={setRoleFilter} options={[{ value: 'all', label: 'All roles' }, ...roles]} className="w-36" />
@@ -306,7 +442,7 @@ export default function EmployeesPage() {
                 {!loading && filtered.length === 0 && (
                   <tr>
                     <td colSpan={5} className="py-12 text-center">
-                      {employees.length === 0 ? (
+                      {staff.length === 0 ? (
                         <EmptyState icon="people" title="No team members yet" description="Invite your first employee to get started." />
                       ) : (
                         <div className="flex flex-col items-center justify-center py-8 text-center">
@@ -361,11 +497,11 @@ export default function EmployeesPage() {
                     </div>
                     <div>
                       <label className="font-label-sm text-label-sm text-on-surface-variant">Work email</label>
-                      <input type="email" value={row.email} onChange={(e) => updateRow(idx, { email: e.target.value })} className="input-base mt-xs w-full" placeholder="jane@hospital.org" />
+                      <input type="email" value={row.email} onChange={(e) => updateRow(idx, { email: e.target.value })} className="input-base mt-xs w-full" placeholder="jane@yourteam.com" />
                     </div>
                     <div>
                       <label className="font-label-sm text-label-sm text-on-surface-variant">Department</label>
-                      <input value={row.department} onChange={(e) => updateRow(idx, { department: e.target.value })} className="input-base mt-xs w-full" placeholder="e.g. Emergency" />
+                      <Select value={row.department} onChange={(v) => updateRow(idx, { department: v })} options={[{value:'Unassigned',label:'Unassigned'}, ...depts.map((d) => ({value:d.name,label:d.name}))]} className="w-full mt-xs" />
                     </div>
                     <div>
                       <label className="font-label-sm text-label-sm text-on-surface-variant">Role</label>
@@ -375,44 +511,50 @@ export default function EmployeesPage() {
                 ))}
               </div>
 
+              {inviteErrors.length > 0 && (
+                <div className="p-md rounded-xl bg-error/10 border border-error/30 space-y-sm">
+                  <div className="flex items-center gap-2 text-error font-semibold">
+                    <span className="material-symbols-outlined text-[20px]">error</span>
+                    <span>Failed to create {inviteErrors.length} invite{inviteErrors.length === 1 ? '' : 's'}</span>
+                  </div>
+                  <ul className="space-y-1 text-sm text-error">
+                    {inviteErrors.map((err, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="material-symbols-outlined text-[16px] mt-0.5">cancel</span>
+                        <span>{err}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <button type="button" onClick={addRow} className="btn-secondary w-full justify-center">
                 <span className="material-symbols-outlined text-[18px]">add</span>
                 Add another employee
               </button>
 
               <div className="flex items-center justify-end gap-sm pt-sm border-t border-outline-variant/30">
-                <button type="button" onClick={() => setShowModal(false)} className="btn-ghost">Cancel</button>
-                <button type="submit" className="btn-primary">Create invites</button>
+                <button type="button" onClick={() => setShowModal(false)} disabled={inviting} className="btn-ghost disabled:opacity-60">Cancel</button>
+                <button type="submit" disabled={inviting} className="btn-primary disabled:opacity-60">
+                  {inviting ? 'Creating…' : 'Create invites'}
+                </button>
               </div>
             </form>
           ) : (
             <div className="space-y-md">
               <p className="font-body-md text-body-md text-on-surface-variant">
-                {createdInvites.length} invite{createdInvites.length === 1 ? '' : 's'} created. Share each link with the matching employee — opening it activates their account automatically.
+                {createdInvites.length} invite{createdInvites.length === 1 ? '' : 's'} created. Copy the link and share it with the person. They'll set their own password when they open it.
               </p>
               <div className="space-y-sm max-h-[50vh] overflow-y-auto pr-1">
                 {createdInvites.map((i) => (
                   <div key={i.id} className="p-md rounded-xl bg-surface-container/50 border border-outline-variant/30 space-y-sm">
-                    <div className="font-label-md text-label-md font-semibold text-on-surface">{i.email}</div>
-                    {i.temp_password && (
-                      <div className="flex items-center gap-sm">
-                        <span className="font-label-sm text-label-sm text-on-surface-variant w-32 shrink-0">Temp password</span>
-                        <code className="flex-1 font-mono text-sm bg-background px-3 py-2 rounded-md border border-outline-variant/30 select-all">{i.temp_password}</code>
-                        <button
-                          type="button"
-                          onClick={() => { navigator.clipboard.writeText(i.temp_password); toast.push('Temp password copied', { tone: 'success' }) }}
-                          className="btn-secondary whitespace-nowrap py-2 px-3"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">content_copy</span>
-                          Copy
-                        </button>
-                      </div>
-                    )}
+                    <div className="font-label-md text-label-md font-semibold text-on-surface">{i.name || i.email}</div>
+                    <div className="font-label-sm text-label-sm text-on-surface-variant">{i.department || 'Unassigned'} · {i.role}</div>
                     <div className="flex items-center gap-sm">
                       <input readOnly value={inviteLink(i.token)} className="input-base flex-1 text-sm" />
                       <button onClick={() => copyLink(i.token)} className="btn-primary whitespace-nowrap py-2 px-3">
                         <span className="material-symbols-outlined text-[16px]">content_copy</span>
-                        Copy
+                        Copy link
                       </button>
                     </div>
                   </div>
@@ -457,13 +599,6 @@ export default function EmployeesPage() {
                 <div>
                   <div className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Manager</div>
                   <div className="font-label-md text-label-md text-on-surface">{viewing.managerId || viewing.manager_id || '—'}</div>
-                </div>
-                <div>
-                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Certifications</div>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {(viewing.certifications || []).length === 0 && <span className="font-label-md text-label-md text-on-surface">—</span>}
-                    {(viewing.certifications || []).map((c) => <Badge key={c} variant="info">{c}</Badge>)}
-                  </div>
                 </div>
                 <div>
                   <div className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Hours this week</div>

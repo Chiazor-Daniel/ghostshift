@@ -14,7 +14,7 @@ export default function MarketingFooter() {
               <div className="font-headline-md text-lg font-bold text-on-surface">GhostShift</div>
             </Link>
             <p className="mt-md font-body-sm text-body-sm text-on-surface-variant max-w-xs">
-              The intelligent shift-swap and burnout-prediction platform for modern healthcare teams.
+              AI shift-swap and workload intelligence for any shift-based team — healthcare, operations, hospitality, and beyond.
             </p>
             <div className="mt-lg flex gap-sm">
               {['twitter', 'linkedin', 'github'].map((s) => (
@@ -35,7 +35,7 @@ export default function MarketingFooter() {
           {[
             {
               title: 'Product',
-              items: ['Swap Matching', 'Burnout Prediction', 'Marketplace', 'AI Assistant', 'Pricing'],
+              items: ['Swap Matching', 'Burnout Prediction', 'Marketplace', 'AI Assistant', 'Use Cases'],
             },
             {
               title: 'Company',
@@ -68,7 +68,7 @@ export default function MarketingFooter() {
 
         <div className="mt-xl pt-lg border-t border-outline-variant/30 flex flex-col md:flex-row items-center justify-between gap-md">
           <p className="font-label-sm text-label-sm text-on-surface-variant">
-            © 2026 GhostShift, Inc. HIPAA-compliant. SOC 2 Type II certified.
+            © 2026 GhostShift, Inc. · SOC 2 Type II · ISO 27001
           </p>
           <div className="flex gap-md">
             <a href="#" className="font-label-sm text-label-sm text-on-surface-variant hover:text-primary">

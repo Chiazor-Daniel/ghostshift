@@ -8,15 +8,18 @@ import os
 from config.env import load_env
 load_env()
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# Database URL from environment
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://buzz:buzz@localhost:5432/ghostshift"
-)
+# Database URL from environment (Render provides DATABASE_URL).
+# Refuse to fall back to a local-only default in production.
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not set. Configure it in the environment, e.g. "
+        "postgresql://user:pass@host:5432/dbname"
+    )
 
 # Create engine
 engine = create_engine(
@@ -27,6 +30,13 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_recycle=3600
 )
+
+
+@event.listens_for(engine, "connect")
+def set_timezone(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("SET timezone TO 'UTC'")
+    cursor.close()
 
 # Create session
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

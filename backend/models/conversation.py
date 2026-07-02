@@ -10,7 +10,7 @@ from sqlalchemy import (
     Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Text, Index
 )
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from config.database import Base
 
 
@@ -28,7 +28,7 @@ class ConversationTurn(Base):
     tool_name = Column(String(64), nullable=True)
     tool_args = Column(JSON, nullable=True)
     tool_result = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
     __table_args__ = (
         Index("ix_conv_session_time", "session_id", "created_at"),

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Card, CardHeader, Badge, Drawer, EmptyState, Select, ListSkeleton, Pagination } from '../components/ui.jsx'
+import { Card, CardHeader, Badge, Drawer, EmptyState, Select, ListSkeleton, Pagination, ConfirmDialog, RichListItem, Modal } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { useUser } from '../layout/AppShell.jsx'
 import { realAPI } from '../services/realAPI.js'
@@ -23,6 +23,13 @@ export default function LeaveRequestsPage() {
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
   const [form, setForm] = useState({ type: 'vacation', startDate: '', endDate: '', reason: '' })
+  // Per-action busy flags — prevent double-clicks on async buttons.
+  const [submittingLeave, setSubmittingLeave] = useState(false)
+  const [busyLeaveId, setBusyLeaveId] = useState(null)
+  const [busyLeaveAction, setBusyLeaveAction] = useState(null)
+  const [confirmLeave, setConfirmLeave] = useState(null)
+  const [reasoning, setReasoning] = useState(null)
+  const [busyReasoningId, setBusyReasoningId] = useState(null)
 
   useEffect(() => {
     refresh()
@@ -36,7 +43,7 @@ export default function LeaveRequestsPage() {
       const data = await realAPI.getLeaves(params)
       setLeaves(Array.isArray(data) ? data : [])
     } catch (err) {
-      toast.push(err.message || 'Could not load leave requests', { tone: 'error' })
+      toast.push(err.message || 'Could not load absence requests', { tone: 'error' })
     } finally {
       setLoading(false)
     }
@@ -44,10 +51,12 @@ export default function LeaveRequestsPage() {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (submittingLeave) return
     if (!form.startDate || !form.endDate) {
       toast.push('Please select start and end dates', { tone: 'warning' })
       return
     }
+    setSubmittingLeave(true)
     try {
       await realAPI.createLeave({
         type: form.type,
@@ -55,32 +64,58 @@ export default function LeaveRequestsPage() {
         end_date: form.endDate,
         reason: form.reason,
       })
-      toast.push('Leave request submitted', { tone: 'success' })
+      toast.push('Absence request submitted', { tone: 'success' })
       setDrawerOpen(false)
       setForm({ type: 'vacation', startDate: '', endDate: '', reason: '' })
       refresh()
     } catch (err) {
-      toast.push(err.message || 'Could not submit leave request', { tone: 'error' })
+      toast.push(err.message || 'Could not submit absence request', { tone: 'error' })
+    } finally {
+      setSubmittingLeave(false)
     }
   }
 
-  async function handleDecide(id, status) {
+  async function loadReasoning(lv) {
+    if (busyReasoningId) return
+    setBusyReasoningId(lv.id)
     try {
-      await realAPI.decideLeave(id, { status })
-      toast.push(`Leave request ${status}`, { tone: status === 'approved' ? 'success' : 'warning' })
-      refresh()
+      const res = await realAPI.getLeaveReasoning(lv.id)
+      setReasoning({ ...res, leave: lv })
     } catch (err) {
-      toast.push(err.message || 'Could not update leave request', { tone: 'error' })
+      toast.push(err.message || 'Could not load AI reasoning', { tone: 'error' })
+    } finally {
+      setBusyReasoningId(null)
     }
   }
 
-  async function handleCancel(id) {
+  function handleDecide(id, status) {
+    setConfirmLeave({ id, status, action: status === 'approved' ? 'approve' : 'reject' })
+  }
+
+  function handleCancel(id) {
+    setConfirmLeave({ id, status: 'cancelled', action: 'cancel' })
+  }
+
+  async function executeLeaveAction() {
+    if (!confirmLeave) return
+    const { id, status } = confirmLeave
+    setConfirmLeave(null)
+    setBusyLeaveId(id)
+    setBusyLeaveAction(status === 'approved' ? 'approve' : status === 'cancelled' ? 'cancel' : 'reject')
     try {
-      await realAPI.cancelLeave(id)
-      toast.push('Leave request cancelled', { tone: 'warning' })
+      if (status === 'cancelled') {
+        await realAPI.cancelLeave(id)
+        toast.push('Absence request cancelled', { tone: 'warning' })
+      } else {
+        await realAPI.decideLeave(id, { status })
+        toast.push(`Absence request ${status}`, { tone: status === 'approved' ? 'success' : 'warning' })
+      }
       refresh()
     } catch (err) {
-      toast.push(err.message || 'Could not cancel leave request', { tone: 'error' })
+      toast.push(err.message || 'Could not update absence request', { tone: 'error' })
+    } finally {
+      setBusyLeaveId(null)
+      setBusyLeaveAction(null)
     }
   }
 
@@ -90,18 +125,18 @@ export default function LeaveRequestsPage() {
 
   const sortedLeaves = leaves
     .slice()
-    .sort((a, b) => new Date(b.submitted_at || b.submittedAt) - new Date(a.submitted_at || a.submittedAt))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
   const PAGE_SIZE = 8
   const pageLeaves = sortedLeaves.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <>
       <div className="mb-6 flex items-center justify-between flex-wrap gap-3">
-        <h1 className="font-display-sm font-bold text-on-surface">Leave Requests</h1>
+        <h1 className="font-display-sm font-bold text-on-surface">Absence Requests</h1>
         {!isAdmin && (
           <button onClick={() => setDrawerOpen(true)} className="btn-primary">
             <span className="material-symbols-outlined text-[18px]">add</span>
-            Request leave
+            Request absence
           </button>
         )}
       </div>
@@ -127,58 +162,51 @@ export default function LeaveRequestsPage() {
         </div>
 
         <Card hover={false}>
-          <CardHeader icon="event_busy" title={isAdmin ? 'All leave requests' : 'My leave requests'} />
+          <CardHeader icon="event_busy" title={isAdmin ? 'All absence requests' : 'My absence requests'} />
           {loading ? (
             <div className="mt-md"><ListSkeleton variant="row" count={4} /></div>
           ) : leaves.length === 0 ? (
-            <EmptyState icon="event_busy" title="No leave requests" description={isAdmin ? 'No employees have requested leave yet.' : 'You have not requested any leave yet.'} />
+            <EmptyState icon="event_busy" title="No absence requests" description={isAdmin ? 'No employees have requested absence yet.' : 'You have not requested any absence yet.'} />
           ) : (
             <div className="space-y-sm mt-md">
-              {pageLeaves.map((l) => (
-                  <div key={l.id} className="flex items-center gap-md p-md rounded-xl border border-outline-variant/30 hover:border-primary/40 transition-colors">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                      l.status === 'approved' ? 'bg-success/10 text-success' :
-                      (l.status === 'declined' || l.status === 'rejected') ? 'bg-error/10 text-error' :
-                      'bg-warning/10 text-warning'
-                    }`}>
-                      <span className="material-symbols-outlined text-[20px]">
-                        {l.status === 'approved' ? 'check_circle' : (l.status === 'declined' || l.status === 'rejected') ? 'cancel' : 'hourglass_top'}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-sm flex-wrap">
-                        <span className="font-label-md text-label-md font-bold text-on-surface">{l.employee_name || l.employeeName}</span>
-                        <Badge variant={l.status === 'approved' ? 'success' : (l.status === 'declined' || l.status === 'rejected') ? 'error' : 'warning'}>
-                          {l.status}
-                        </Badge>
-                        <span className="chip bg-surface-variant text-on-surface-variant text-xs">{leaveTypes.find(t => t.value === l.type)?.label || l.type}</span>
-                      </div>
-                      <div className="font-label-sm text-label-sm text-on-surface-variant mt-0.5">
-                        {formatDate(l.start_date || l.startDate)} – {formatDate(l.end_date || l.endDate)}
-                        {l.reason && ` · ${l.reason}`}
-                      </div>
-                    </div>
-                    {isAdmin && l.status === 'pending' && (
-                      <div className="flex gap-sm">
-                        <button onClick={() => handleDecide(l.id, 'approved')} className="btn-primary py-xs px-sm text-xs">Approve</button>
-                        <button onClick={() => handleDecide(l.id, 'rejected')} className="btn-ghost py-xs px-sm text-xs text-error hover:bg-error/10">Decline</button>
-                      </div>
-                    )}
-                    {!isAdmin && l.status === 'pending' && (
-                      <button onClick={() => handleCancel(l.id)} className="btn-ghost py-xs px-sm text-xs">Cancel</button>
-                    )}
-                  </div>
-                ))}
+              {pageLeaves.map((l) => {
+                const statusVariant =
+                  l.status === 'approved' ? 'success' :
+                  (l.status === 'declined' || l.status === 'rejected') ? 'error' : 'warning'
+                const statusIcon =
+                  l.status === 'approved' ? 'check_circle' :
+                  (l.status === 'declined' || l.status === 'rejected') ? 'cancel' : 'hourglass_top'
+                const actions = isAdmin && l.status === 'pending' ? [
+                  { label: 'AI reason', icon: 'auto_awesome', onClick: () => loadReasoning(l), disabled: busyReasoningId !== null },
+                  { label: busyLeaveId === l.id && busyLeaveAction === 'approve' ? '…' : 'Approve', primary: true, onClick: () => handleDecide(l.id, 'approved'), disabled: busyLeaveId !== null },
+                  { label: busyLeaveId === l.id && busyLeaveAction === 'reject' ? '…' : 'Decline', danger: true, onClick: () => handleDecide(l.id, 'rejected'), disabled: busyLeaveId !== null },
+                ] : !isAdmin && l.status === 'pending' ? [
+                  { label: busyLeaveId === l.id && busyLeaveAction === 'cancel' ? '…' : 'Cancel', onClick: () => handleCancel(l.id), disabled: busyLeaveId !== null },
+                ] : []
+                return (
+                  <RichListItem
+                    key={l.id}
+                    icon={statusIcon}
+                    iconColor={statusVariant}
+                    title={l.employee_name || l.employeeName}
+                    subtitle={`${formatDate(l.start_date || l.startDate)} – ${formatDate(l.end_date || l.endDate)}`}
+                    status={{ variant: statusVariant, label: l.status }}
+                    meta={l.reason}
+                    details={[{ label: 'Type', value: leaveTypes.find(t => t.value === l.type)?.label || l.type }]}
+                    actions={actions}
+                  />
+                )
+              })}
               <Pagination page={page} pageSize={PAGE_SIZE} total={sortedLeaves.length} onChange={setPage} />
             </div>
           )}
         </Card>
       </section>
 
-      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} title="Request leave" subtitle="Submit a time-off request">
+      <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} title="Request absence" subtitle="Submit a time-off request">
         <form onSubmit={handleSubmit} className="p-md space-y-md">
           <div>
-            <label className="font-label-sm text-label-sm text-on-surface-variant">Leave type</label>
+            <label className="font-label-sm text-label-sm text-on-surface-variant">Absence type</label>
             <Select value={form.type} onChange={(v) => setForm({ ...form, type: v })} options={leaveTypes} className="w-full mt-xs" />
           </div>
           <div className="grid grid-cols-2 gap-md">
@@ -193,14 +221,49 @@ export default function LeaveRequestsPage() {
           </div>
           <div>
             <label className="font-label-sm text-label-sm text-on-surface-variant">Reason (optional)</label>
-            <textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} className="input-base mt-xs w-full min-h-[80px] resize-none" placeholder="Brief reason for leave" />
+            <textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} className="input-base mt-xs w-full min-h-[80px] resize-none" placeholder="Brief reason for absence" />
           </div>
           <div className="flex items-center justify-end gap-sm pt-sm border-t border-outline-variant/30">
-            <button type="button" onClick={() => setDrawerOpen(false)} className="btn-ghost">Cancel</button>
-            <button type="submit" className="btn-primary">Submit request</button>
+            <button type="button" onClick={() => setDrawerOpen(false)} disabled={submittingLeave} className="btn-ghost disabled:opacity-60">Cancel</button>
+            <button type="submit" disabled={submittingLeave} className="btn-primary disabled:opacity-60">
+              {submittingLeave ? 'Submitting…' : 'Submit request'}
+            </button>
           </div>
         </form>
       </Drawer>
+
+      <ConfirmDialog
+        open={!!confirmLeave}
+        onClose={() => setConfirmLeave(null)}
+        onConfirm={executeLeaveAction}
+        title={confirmLeave?.action === 'approve' ? 'Approve absence?' : confirmLeave?.action === 'cancel' ? 'Cancel request?' : 'Decline request?'}
+        message={confirmLeave?.action === 'approve' ? 'Approve this absence request?' : confirmLeave?.action === 'cancel' ? 'Cancel your absence request?' : 'Decline this absence request?'}
+        confirmLabel={confirmLeave?.action === 'approve' ? 'Approve' : confirmLeave?.action === 'cancel' ? 'Cancel' : 'Decline'}
+        tone={confirmLeave?.action === 'approve' ? 'primary' : 'danger'}
+      />
+
+      {/* AI reasoning modal for leave */}
+      <Modal open={!!reasoning} onClose={() => setReasoning(null)} title="AI reasoning" size="md">
+        {reasoning && (
+          <div className="space-y-md">
+            <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
+              <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Suggested action</div>
+              <div className={`font-headline-md text-2xl font-bold mt-1 ${reasoning.suggestion === 'approve' ? 'text-success' : 'text-warning'}`}>
+                {reasoning.suggestion === 'approve' ? 'Approve' : 'Review carefully'}
+              </div>
+              <div className="font-label-sm text-label-sm text-on-surface-variant mt-1">
+                Overlapping shifts: <b>{reasoning.overlapping_shifts}</b>
+              </div>
+            </div>
+            <div>
+              <div className="font-label-sm text-label-sm text-on-surface-variant uppercase mb-2">AI reasoning</div>
+              <p className="font-body-lg text-body-lg text-on-surface leading-relaxed">
+                {reasoning.reasoning}
+              </p>
+            </div>
+          </div>
+        )}
+      </Modal>
     </>
   )
 }

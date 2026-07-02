@@ -1,7 +1,7 @@
 // Real GhostShift API client — talks to the FastAPI backend.
 // Endpoints match backend route prefixes in /backend/routes/.
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://ghostshift-v1-0-0.onrender.com/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
 class RealAPI {
   constructor() {
@@ -57,10 +57,13 @@ class RealAPI {
     // 401 with a *valid-looking* refresh token → try refresh once. A refresh
     // token that the server already rejected (or that we don't have a user
     // for) is just going to 422 again and spam the console.
+    // Don't retry on auth endpoints (login, refresh) to avoid error stacking.
+    const isAuthEndpoint = path.includes('/auth/login') || path.includes('/auth/refresh') || path.includes('/auth/onboard')
     const canRetry = response.status === 401
       && this.refreshToken
       && this.user
       && !options._retried
+      && !isAuthEndpoint
     if (canRetry) {
       const refreshed = await this._refresh()
       if (refreshed) {
@@ -118,8 +121,23 @@ class RealAPI {
     return data
   }
 
+  async forgotPassword(email) {
+    return this._request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) })
+  }
+
+  async resetPassword(token, new_password) {
+    return this._request('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, new_password }) })
+  }
+
   async getMe() {
     return this._request('/auth/me')
+  }
+
+  async changePassword(current_password, new_password) {
+    return this._request('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password, new_password }),
+    })
   }
 
   async logout() {
@@ -135,7 +153,10 @@ class RealAPI {
   async deleteDepartment(id) { return this._request(`/organization/departments/${id}`, { method: 'DELETE' }) }
 
   // ── Employees ────────────────────────────────────────────────
-  async getEmployees() { return this._request('/employees/') }
+  async getEmployees() {
+    const res = await this._request('/employees/')
+    return res?.items || res || []
+  }
   async getEmployee(id) { return this._request(`/employees/${id}`) }
   async createEmployee(payload) { return this._request('/employees/', { method: 'POST', body: JSON.stringify(payload) }) }
   async updateEmployee(id, payload) { return this._request(`/employees/${id}`, { method: 'PUT', body: JSON.stringify(payload) }) }
@@ -144,28 +165,39 @@ class RealAPI {
   // ── Shifts ──────────────────────────────────────────────────
   async getShifts(params = {}) {
     const q = new URLSearchParams(params).toString()
-    return this._request(`/shifts/${q ? `?${q}` : ''}`)
+    const res = await this._request(`/shifts/${q ? `?${q}` : ''}`)
+    return res?.items || res || []
   }
   async createShift(payload) { return this._request('/shifts/', { method: 'POST', body: JSON.stringify(payload) }) }
   async updateShift(id, payload) { return this._request(`/shifts/${id}`, { method: 'PUT', body: JSON.stringify(payload) }) }
   async deleteShift(id) { return this._request(`/shifts/${id}`, { method: 'DELETE' }) }
   async assignShift(id, employee_id) { return this._request(`/shifts/${id}/assign`, { method: 'POST', body: JSON.stringify({ employee_id }) }) }
-  async unassignShift(id) { return this._request(`/shifts/${id}/assign`, { method: 'DELETE' }) }
+  async unassignShift(id, employee_id) { return this._request(`/shifts/${id}/unassign`, { method: 'POST', body: JSON.stringify({ employee_id }) }) }
+  async checkInShift(id, notes) { return this._request(`/shifts/${id}/check-in`, { method: 'POST', body: JSON.stringify({ notes: notes || '' }) }) }
+  async checkOutShift(id, notes) { return this._request(`/shifts/${id}/check-out`, { method: 'POST', body: JSON.stringify({ notes: notes || '' }) }) }
 
   // ── Swaps ───────────────────────────────────────────────────
   async getSwaps(params = {}) {
     const q = new URLSearchParams(params).toString()
-    return this._request(`/swaps/${q ? `?${q}` : ''}`)
+    const res = await this._request(`/swaps/${q ? `?${q}` : ''}`)
+    return res?.items || res || []
   }
   async createSwap(payload) { return this._request('/swaps/', { method: 'POST', body: JSON.stringify(payload) }) }
   async approveSwap(id, payload = {}) { return this._request(`/swaps/${id}/approve`, { method: 'PUT', body: JSON.stringify(payload) }) }
   async rejectSwap(id, payload = {}) { return this._request(`/swaps/${id}/reject`, { method: 'PUT', body: JSON.stringify(payload) }) }
+  async getSwapSuggestions(shiftId) { return this._request(`/swaps/suggest/${shiftId}`) }
   async cancelSwap(id) { return this._request(`/swaps/${id}`, { method: 'DELETE' }) }
+  async autoFillShift(shiftId) { return this._request(`/swaps/auto-fill/${shiftId}`, { method: 'POST' }) }
+  async getFreeSuggestions(shiftId) { return this._request(`/swaps/suggestions/${shiftId}`) }
+
+  // ── Shifts ──────────────────────────────────────────────────
+  async getNoShowAlerts() { return this._request('/shifts/no-show-alerts') }
 
   // ── Leaves ──────────────────────────────────────────────────
   async getLeaves(params = {}) {
     const q = new URLSearchParams(params).toString()
-    return this._request(`/leaves/${q ? `?${q}` : ''}`)
+    const res = await this._request(`/leaves/${q ? `?${q}` : ''}`)
+    return res?.items || res || []
   }
   async createLeave(payload) { return this._request('/leaves/', { method: 'POST', body: JSON.stringify(payload) }) }
   async decideLeave(id, payload) { return this._request(`/leaves/${id}/decide`, { method: 'PUT', body: JSON.stringify(payload) }) }
@@ -184,25 +216,36 @@ class RealAPI {
     const q = employee_id ? `?employee_id=${encodeURIComponent(employee_id)}` : ''
     return this._request(`/analytics/burnout${q}`)
   }
+  async getSwapReasoning(id) { return this._request(`/swaps/${id}/reasoning`) }
+  async getLeaveReasoning(id) { return this._request(`/leaves/${id}/reasoning`) }
+  async getBatchReasoning(payload) { return this._request('/swaps/batch-reasoning', { method: 'POST', body: JSON.stringify(payload) }) }
+  async getExecutiveSummary() { return this._request('/analytics/executive-summary') }
   async getCoverageAnalytics() { return this._request('/analytics/coverage') }
   async getStaffingAnalytics() { return this._request('/analytics/staffing') }
+  async getAttendanceAnalytics(employee_id = null) {
+    const q = employee_id ? `?employee_id=${encodeURIComponent(employee_id)}` : ''
+    return this._request(`/analytics/attendance${q}`)
+  }
   async getReports(params = {}) {
     const q = new URLSearchParams(params).toString()
     return this._request(`/analytics/reports${q ? `?${q}` : ''}`)
   }
 
   // ── Notifications ──────────────────────────────────────────
-  async getNotifications() { return this._request('/notifications/') }
+  async getNotifications() {
+    const res = await this._request('/notifications/')
+    return res?.items || res || []
+  }
   async markNotificationRead(id) { return this._request(`/notifications/${id}/read`, { method: 'PUT' }) }
   async markAllNotificationsRead() { return this._request('/notifications/read-all', { method: 'PUT' }) }
   async deleteNotification(id) { return this._request(`/notifications/${id}`, { method: 'DELETE' }) }
-  async sendNotification(payload) { return this._request('/notifications/', { method: 'POST', body: JSON.stringify(payload) }) }
+  async sendNotification(payload) { return this._request('/notifications/send', { method: 'POST', body: JSON.stringify(payload) }) }
 
   // ── Invites ────────────────────────────────────────────────
   async getInvites() { return this._request('/invites/') }
   async createInvite(payload) { return this._request('/invites/', { method: 'POST', body: JSON.stringify(payload) }) }
   async revokeInvite(id) { return this._request(`/invites/${id}/revoke`, { method: 'PUT' }) }
-  async acceptInvite(token) { return this._request('/invites/accept', { method: 'POST', body: JSON.stringify({ token }) }) }
+  async acceptInvite(token, password) { return this._request('/invites/accept', { method: 'POST', body: JSON.stringify({ token, password }) }) }
   async previewInvite(token) { return this._request(`/invites/preview/${token}`) }
 
   // ── Audit ──────────────────────────────────────────────────

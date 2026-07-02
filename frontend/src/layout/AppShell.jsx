@@ -53,23 +53,6 @@ export default function AppShell({ activeRole, setActiveRole, children }) {
           <div className={`flex-1 flex flex-col min-h-screen overflow-x-hidden transition-[margin] duration-300 ease-out ${
             collapsed ? 'md:ml-[72px]' : 'md:ml-[240px]'
           }`}>
-            <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-outline-variant/20 bg-surface">
-              <div className="flex items-center gap-2">
-                <button onClick={() => setMobileOpen(true)} className="btn-icon-sm" aria-label="Menu">
-                  <span className="material-symbols-outlined text-[24px]">menu</span>
-                </button>
-                <div className="flex items-center gap-1.5">
-                  <Logo size={24} />
-                  <span className="font-headline-md text-sm font-bold text-on-surface">GhostShift</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <button onClick={toggleTheme} className="btn-icon-sm" aria-label="Toggle theme">
-                  <span className="material-symbols-outlined text-[20px]">{dark ? 'light_mode' : 'dark_mode'}</span>
-                </button>
-                <img src={resolvedUser?.avatar} alt="" className="w-7 h-7 rounded-full object-cover ring-2 ring-primary/20" />
-              </div>
-            </header>
             <main className="flex-1 pt-4 md:pt-6">
               <div className="page-container">{children}</div>
             </main>

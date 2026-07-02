@@ -6,12 +6,14 @@ import os
 import json
 import logging
 from typing import Dict, List, Optional, Set
-from datetime import datetime
-from fastapi import WebSocket, WebSocketDisconnect, APIRouter
+from datetime import datetime, timezone
+from fastapi import WebSocket, WebSocketDisconnect, APIRouter, HTTPException, status
 from fastapi.websockets import WebSocketState
 import asyncio
+import jwt
 
 from config.database import SessionLocal
+from middleware.auth import SECRET_KEY, ALGORITHM, verify_token
 from ai_ml.burnout import burnout_predictor
 
 logger = logging.getLogger(__name__)
@@ -93,11 +95,29 @@ async def check_burnout_alerts():
             await asyncio.sleep(60)
 
 
-@router.websocket("/ws/{user_id}")
-async def websocket_endpoint(websocket: WebSocket, user_id: str):
-    """WebSocket endpoint for real-time features"""
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, token: str = ""):
+    """WebSocket endpoint for real-time features. Authenticates via JWT token query param."""
+    # Authenticate: extract and verify JWT token
+    if not token:
+        await websocket.close(code=4001, reason="Missing authentication token")
+        return
+    try:
+        payload = verify_token(token)
+        user_id = payload.get("user_id")
+        if not user_id:
+            await websocket.close(code=4001, reason="Invalid token payload")
+            return
+    except HTTPException:
+        await websocket.close(code=4001, reason="Invalid or expired token")
+        return
+    except Exception as e:
+        logger.error(f"WebSocket auth error: {e}")
+        await websocket.close(code=4001, reason="Authentication failed")
+        return
+
     await manager.connect(websocket, user_id)
-    
+
     try:
         while True:
             # Wait for messages
@@ -128,7 +148,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                 elif action == "ping":
                     await manager.send_to_user(user_id, {
                         "type": "pong",
-                        "timestamp": datetime.utcnow().isoformat()
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                     })
                 
                 else:
@@ -157,7 +177,7 @@ async def send_shift_update(org_id: str, shift_id: str, shift_data: dict):
         "org_id": org_id,
         "shift_id": shift_id,
         "data": shift_data,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
     
     # Broadcast to all connected clients
@@ -171,7 +191,7 @@ async def send_swap_request(org_id: str, requester_id: str, swap_data: dict):
         "org_id": org_id,
         "requester_id": requester_id,
         "data": swap_data,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
     
     # Send to responder
@@ -185,7 +205,7 @@ async def send_burnout_alert(org_id: str, employee_id: str, alert_data: dict):
         "org_id": org_id,
         "employee_id": employee_id,
         "data": alert_data,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
     
     # Send to employee and their manager
@@ -200,7 +220,7 @@ async def send_coverage_gap(org_id: str, department_id: str, gap_data: dict):
         "org_id": org_id,
         "department_id": department_id,
         "data": gap_data,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
     
     # Broadcast to relevant staff

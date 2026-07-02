@@ -2,9 +2,9 @@
 Notification Model - Push notifications and alerts
 """
 
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Enum
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Enum, Index
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from config.database import Base
 import enum
 
@@ -34,6 +34,10 @@ class NotificationStatus(str, enum.Enum):
 
 class Notification(Base):
     __tablename__ = "notifications"
+    __table_args__ = (
+        Index('idx_notification_user_status_created', 'user_id', 'status', 'created_at'),
+        Index('idx_notification_org_user', 'org_id', 'user_id'),
+    )
 
     id = Column(String(50), primary_key=True, index=True)
     org_id = Column(String(50), ForeignKey("organizations.id", name="fk_notification_org"), nullable=False)
@@ -45,10 +49,10 @@ class Notification(Base):
     data = Column(JSON, default=dict)
     context = Column(String(255))
     status = Column(String(20), default="unread", nullable=False)
-    read_at = Column(DateTime)
-    archived_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    read_at = Column(DateTime(timezone=True))
+    archived_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     organization = relationship("Organization")

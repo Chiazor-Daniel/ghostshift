@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Card, CardHeader, Badge, Avatar, Drawer, StatCard, Select, ListSkeleton } from '../components/ui.jsx'
+import { Card, CardHeader, Badge, Avatar, Drawer, StatCard, Select, ListSkeleton, RichListItem } from '../components/ui.jsx'
 import Calendar from '../components/Calendar.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
@@ -13,8 +13,6 @@ const newShiftDefaults = () => ({
   start_hour: 9,
   duration_hours: 8,
   urgency: 'medium',
-  pay_differential: '+0%',
-  certifications: [],
   eligible_count: 0,
   description: '',
   required_staff: 1,
@@ -30,7 +28,12 @@ export default function ManagerDashboard() {
   const [showNewShift, setShowNewShift] = useState(false)
   const [newShift, setNewShift] = useState(newShiftDefaults())
   const [loading, setLoading] = useState(false)
+  const [leaves, setLeaves] = useState([])
   const [deptFilter, setDeptFilter] = useState('all')
+  // Per-action busy flags — prevent double-clicks on async buttons.
+  const [creatingShift, setCreatingShift] = useState(false)
+  const [assigningShiftId, setAssigningShiftId] = useState(null)
+  const [deletingShiftId, setDeletingShiftId] = useState(null)
 
   useEffect(() => {
     refresh()
@@ -39,16 +42,18 @@ export default function ManagerDashboard() {
   async function refresh() {
     setLoading(true)
     try {
-      const [sh, sw, emps, dp] = await Promise.all([
+      const [sh, sw, emps, dp, lv] = await Promise.all([
         realAPI.getShifts(),
         realAPI.getSwaps(),
         realAPI.getEmployees(),
         realAPI.getDepartments(),
+        realAPI.getLeaves(),
       ])
       setShifts(sh || [])
       setSwaps(sw || [])
       setEmployees(emps || [])
       setDepts(dp || [])
+      setLeaves(lv || [])
     } catch (err) {
       toast.push(err.message || 'Could not load', { tone: 'error' })
     } finally {
@@ -72,19 +77,21 @@ export default function ManagerDashboard() {
       })
   }, [filteredShifts])
 
-  const criticalGaps = gaps.filter((g) => g.severity === 'critical').length
-  const pendingSwaps = swaps.filter((s) => s.status === 'pending')
+  const pendingSwaps = swaps.filter((s) => s.status === 'pending' && s.kind === 'swap')
+  const pendingLeaves = leaves.filter((l) => l.status === 'pending')
   const upcomingShifts = filteredShifts
     .filter((s) => s.date >= today().toISOString().slice(0, 10) && s.status !== 'open')
-    .sort((a, b) => new Date(a.date) - new Date(b.date))
-    .slice(0, 6)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 10)
 
   async function createShift(e) {
     e.preventDefault()
+    if (creatingShift) return
     if (!newShift.role || !newShift.department || !newShift.date) {
       toast.push('Fill in role, department, and date.', { tone: 'warning' })
       return
     }
+    setCreatingShift(true)
     try {
       await realAPI.createShift({
         title: newShift.role,
@@ -94,9 +101,7 @@ export default function ManagerDashboard() {
         start_hour: Number(newShift.start_hour),
         duration_hours: Number(newShift.duration_hours),
         urgency: newShift.urgency,
-        pay_differential: newShift.pay_differential,
-        certifications: newShift.certifications,
-        eligible_count: Number(newShift.eligible_count) || employees.filter((e) => e.department === newShift.department).length,
+        eligible_count: Number(newShift.eligible_count) || employees.filter((e) => e.role !== 'admin' && e.department === newShift.department).length,
         description: newShift.description,
         required_staff: Number(newShift.required_staff) || 1,
         status: 'open',
@@ -104,26 +109,20 @@ export default function ManagerDashboard() {
       })
       toast.push('Shift created and posted', { tone: 'success' })
       setShowNewShift(false)
-      setNewShift({ ...newShiftDefaults(), department: newShift.department })
+      // Preserve date and department for rapid shift creation
+      setNewShift({ ...newShiftDefaults(), department: newShift.department, date: newShift.date })
       try { await realAPI.logAudit({ action: 'create_shift', entity_type: 'shift' }) } catch {}
       refresh()
     } catch (err) {
       toast.push(err.message || 'Could not create shift', { tone: 'error' })
-    }
-  }
-
-  async function decideSwap(swapId, status) {
-    try {
-      if (status === 'approved') await realAPI.approveSwap(swapId)
-      else await realAPI.rejectSwap(swapId)
-      toast.push(`Swap ${status}`, { tone: status === 'approved' ? 'success' : 'warning' })
-      refresh()
-    } catch (err) {
-      toast.push(err.message || 'Could not update', { tone: 'error' })
+    } finally {
+      setCreatingShift(false)
     }
   }
 
   async function assignShiftToEmployee(shiftId, empId) {
+    if (assigningShiftId) return
+    setAssigningShiftId(shiftId)
     try {
       await realAPI.assignShift(shiftId, empId)
       toast.push('Shift assigned', { tone: 'success' })
@@ -131,11 +130,15 @@ export default function ManagerDashboard() {
       refresh()
     } catch (err) {
       toast.push(err.message || 'Could not assign', { tone: 'error' })
+    } finally {
+      setAssigningShiftId(null)
     }
   }
 
   async function deleteShift(shiftId) {
+    if (deletingShiftId) return
     if (!confirm('Delete this shift?')) return
+    setDeletingShiftId(shiftId)
     try {
       await realAPI.deleteShift(shiftId)
       setSelectedShift(null)
@@ -143,10 +146,10 @@ export default function ManagerDashboard() {
       refresh()
     } catch (err) {
       toast.push(err.message || 'Could not delete', { tone: 'error' })
+    } finally {
+      setDeletingShiftId(null)
     }
   }
-
-  const certList = ['BLS', 'ACLS', 'PALS', 'TNCC', 'NIHSS']
 
   return (
     <>
@@ -177,61 +180,28 @@ export default function ManagerDashboard() {
         {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard label="Open shifts" value={gaps.length.toString()} icon="event_available" />
-          <StatCard label="Pending swaps" value={pendingSwaps.length.toString()} icon="swap_horiz" />
-          <StatCard label="Active staff" value={employees.length.toString()} icon="groups" />
-          <StatCard label="Critical gaps" value={criticalGaps.toString()} icon="monitor_heart" />
+          <StatCard label="Swap requests" value={pendingSwaps.length.toString()} icon="swap_horiz" />
+          <StatCard label="Leave requests" value={pendingLeaves.length.toString()} icon="event_busy" />
+          <StatCard label="Active staff" value={employees.filter((e) => e.role !== 'admin').length.toString()} icon="groups" />
         </div>
 
-        {/* Critical gaps */}
-        {criticalGaps > 0 && (
-          <Card hover={false}>
-            <div className="flex items-center gap-3 mb-4">
-              <span className="w-10 h-10 rounded-xl bg-error/10 text-error flex items-center justify-center">
-                <span className="material-symbols-outlined text-[20px]">priority_high</span>
-              </span>
-              <div>
-                <h2 className="font-headline-md text-headline-md font-bold text-on-surface">{criticalGaps} critical gaps</h2>
-                <p className="font-label-sm text-label-sm text-on-surface-variant">These shifts are understaffed — open the shifts list to fill them.</p>
-              </div>
-            </div>
-          </Card>
-        )}
-
+        {/* Calendar + upcoming shifts */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          {/* Pending swaps + Upcoming shifts */}
-          <div className="lg:col-span-5 space-y-4 order-2 lg:order-1">
+          <div className="lg:col-span-8">
             <Card hover={false}>
-              <CardHeader icon="swap_horiz" title="Pending swaps" subtitle={`${pendingSwaps.length} awaiting your call`} />
-              {pendingSwaps.length === 0 ? (
-                <div className="py-8 text-center text-on-surface-variant text-sm">All caught up.</div>
-              ) : (
-                <div className="space-y-2 mt-md">
-                  {pendingSwaps.slice(0, 5).map((sw) => {
-                    const requester = employees.find((e) => e.id === sw.requester_id)
-                    const shift = shifts.find((s) => s.id === sw.from_shift_id)
-                    return (
-                      <div key={sw.id} className="flex items-center gap-md p-md rounded-lg border border-outline-variant/30 hover:border-primary/40 transition-colors">
-                        <Avatar initials={(requester?.name || 'UN').split(' ').map((n) => n[0]).join('')} size="md" />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-label-md text-label-md font-bold text-on-surface truncate">{requester?.name || 'Unknown'}</div>
-                          <div className="font-label-sm text-label-sm text-on-surface-variant truncate">
-                            {shift ? `${shift.role || shift.title} · ${formatDate(shift.date)}` : (sw.reason || 'Swap request')}
-                          </div>
-                        </div>
-                        <button onClick={() => decideSwap(sw.id, 'rejected')} className="btn-ghost text-xs py-1.5 px-3 text-error">
-                          Decline
-                        </button>
-                        <button onClick={() => decideSwap(sw.id, 'approved')} className="btn-primary text-xs py-1.5 px-3">
-                          Approve
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+              <CardHeader icon="calendar_month" title="Schedule view" subtitle="Click a date to see shifts" />
+              <div className="mt-md min-h-[500px]">
+                <Calendar
+                  events={filteredShifts.map((s) => ({
+                    ...s,
+                    title: s.role || s.title,
+                  }))}
+                />
+              </div>
             </Card>
+          </div>
 
-            {/* Upcoming shifts */}
+          <div className="lg:col-span-4">
             <Card hover={false}>
               <CardHeader icon="event" title="Upcoming shifts" />
               {upcomingShifts.length === 0 ? (
@@ -242,44 +212,18 @@ export default function ManagerDashboard() {
                     const filled = (s.assigned_staff || []).length
                     const required = s.required_staff || 1
                     return (
-                      <motion.button
+                      <RichListItem
                         key={s.id}
-                        whileHover={{ x: 2 }}
+                        icon="schedule"
+                        title={s.role || s.title}
+                        subtitle={`${formatDate(s.date)} · ${timeLabel(s.start_hour)} · ${s.department}`}
+                        status={{ variant: filled >= required ? 'success' : 'warning', label: `${filled}/${required}` }}
                         onClick={() => setSelectedShift(s)}
-                        className="w-full flex items-center gap-md p-md rounded-lg border border-outline-variant/30 hover:border-primary/40 transition-all text-left"
-                      >
-                        <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
-                          <span className="material-symbols-outlined text-[20px]">schedule</span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-label-md text-label-md font-bold text-on-surface truncate">{s.role || s.title}</h3>
-                          <p className="font-label-sm text-label-sm text-on-surface-variant truncate">
-                            {formatDate(s.date)} · {timeLabel(s.start_hour)} · {s.department}
-                          </p>
-                        </div>
-                        <Badge variant={filled >= required ? 'success' : 'warning'}>
-                          {filled}/{required}
-                        </Badge>
-                      </motion.button>
+                      />
                     )
                   })}
                 </div>
               )}
-            </Card>
-          </div>
-
-          {/* Calendar — gets the wider column so Month/Week/Day view isn't squished */}
-          <div className="lg:col-span-7 order-1 lg:order-2">
-            <Card hover={false}>
-              <CardHeader icon="calendar_month" title="Schedule view" subtitle="Click a date to see shifts" />
-              <div className="mt-md">
-                <Calendar
-                  events={filteredShifts.map((s) => ({
-                    ...s,
-                    title: s.role || s.title,
-                  }))}
-                />
-              </div>
             </Card>
           </div>
         </div>
@@ -310,20 +254,20 @@ export default function ManagerDashboard() {
               <Select value={String(newShift.duration_hours)} onChange={(v) => setNewShift({ ...newShift, duration_hours: Number(v) })} options={[4, 6, 8, 10, 12, 16, 24].map((h) => ({ value: String(h), label: `${h} hours` }))} className="w-full mt-xs" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-md">
+          <div className="grid grid-cols-3 gap-md">
             <div>
               <label className="font-label-sm text-label-sm text-on-surface-variant">Urgency</label>
               <Select value={newShift.urgency} onChange={(v) => setNewShift({ ...newShift, urgency: v })} options={[{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }]} className="w-full mt-xs" />
             </div>
             <div>
-              <label className="font-label-sm text-label-sm text-on-surface-variant">Pay differential</label>
-              <input value={newShift.pay_differential} onChange={(e) => setNewShift({ ...newShift, pay_differential: e.target.value })} className="input-base mt-xs w-full" placeholder="e.g. +25%" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-md">
-            <div>
               <label className="font-label-sm text-label-sm text-on-surface-variant">Required staff</label>
-              <input type="number" min={1} value={newShift.required_staff} onChange={(e) => setNewShift({ ...newShift, required_staff: Number(e.target.value) })} className="input-base mt-xs w-full" />
+              <input 
+                type="number" 
+                min={1} 
+                value={newShift.required_staff || 1} 
+                onChange={(e) => setNewShift({ ...newShift, required_staff: Math.max(1, Number(e.target.value) || 1) })} 
+                className="input-base mt-xs w-full" 
+              />
             </div>
             <div>
               <label className="font-label-sm text-label-sm text-on-surface-variant">Eligible count</label>
@@ -331,27 +275,14 @@ export default function ManagerDashboard() {
             </div>
           </div>
           <div>
-            <label className="font-label-sm text-label-sm text-on-surface-variant">Certifications (comma-separated)</label>
-            <input value={(newShift.certifications || []).join(', ')} onChange={(e) => setNewShift({ ...newShift, certifications: e.target.value.split(',').map((c) => c.trim()).filter(Boolean) })} className="input-base mt-xs w-full" placeholder="BLS, ACLS" />
-            <div className="flex flex-wrap gap-1 mt-1">
-              {certList.map((c) => (
-                <button key={c} type="button" onClick={() => {
-                  const set = new Set(newShift.certifications || [])
-                  if (set.has(c)) set.delete(c); else set.add(c)
-                  setNewShift({ ...newShift, certifications: [...set] })
-                }} className={`chip text-xs ${(newShift.certifications || []).includes(c) ? 'bg-primary text-on-primary' : 'bg-surface-variant text-on-surface-variant'}`}>
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
             <label className="font-label-sm text-label-sm text-on-surface-variant">Description</label>
             <textarea value={newShift.description} onChange={(e) => setNewShift({ ...newShift, description: e.target.value })} className="input-base mt-xs w-full min-h-[80px] resize-none" placeholder="Briefly describe what's needed" />
           </div>
           <div className="flex items-center justify-end gap-sm pt-sm border-t border-outline-variant/30">
-            <button type="button" onClick={() => setShowNewShift(false)} className="btn-ghost">Cancel</button>
-            <button type="submit" className="btn-primary">Create & post</button>
+            <button type="button" onClick={() => setShowNewShift(false)} disabled={creatingShift} className="btn-ghost disabled:opacity-60">Cancel</button>
+            <button type="submit" disabled={creatingShift} className="btn-primary disabled:opacity-60">
+              {creatingShift ? 'Posting…' : 'Create & post'}
+            </button>
           </div>
         </form>
       </Drawer>
@@ -385,26 +316,35 @@ export default function ManagerDashboard() {
                 <div className="space-y-1 max-h-64 overflow-y-auto">
                   {employees
                     .filter((e) => e.department === selectedShift.department || !selectedShift.department)
-                    .map((e) => (
-                      <button
-                        key={e.id}
-                        onClick={() => assignShiftToEmployee(selectedShift.id, e.id)}
-                        className="w-full flex items-center gap-2 p-2 rounded-lg border border-outline-variant/30 hover:border-primary/40 hover:bg-primary/5 transition-all text-left"
-                      >
-                        <Avatar initials={(e.name || 'U').split(' ').map((n) => n[0]).join('')} size="sm" />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-label-sm text-label-sm text-on-surface truncate">{e.name}</div>
-                          <div className="font-label-sm text-label-sm text-on-surface-variant truncate">{e.department || '—'}</div>
-                        </div>
-                        <span className="material-symbols-outlined text-[16px] text-primary">person_add</span>
-                      </button>
-                    ))}
+                    .map((e) => {
+                      const isAssigning = assigningShiftId === selectedShift.id
+                      return (
+                        <button
+                          key={e.id}
+                          onClick={() => assignShiftToEmployee(selectedShift.id, e.id)}
+                          disabled={isAssigning}
+                          className="w-full flex items-center gap-2 p-2 rounded-lg border border-outline-variant/30 hover:border-primary/40 hover:bg-primary/5 transition-all text-left disabled:opacity-60"
+                        >
+                          <Avatar initials={(e.name || 'U').split(' ').map((n) => n[0]).join('')} size="sm" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-label-sm text-label-sm text-on-surface truncate">{e.name}</div>
+                            <div className="font-label-sm text-label-sm text-on-surface-variant truncate">{e.department || '—'}</div>
+                          </div>
+                          <span className="material-symbols-outlined text-[16px] text-primary">{isAssigning ? 'progress_activity' : 'person_add'}</span>
+                        </button>
+                      )
+                    })}
                 </div>
               </div>
             )}
 
-            <button onClick={() => deleteShift(selectedShift.id)} className="btn-ghost w-full justify-center text-error hover:bg-error/10">
-              <span className="material-symbols-outlined text-[18px]">delete</span> Delete shift
+            <button
+              onClick={() => deleteShift(selectedShift.id)}
+              disabled={deletingShiftId === selectedShift.id}
+              className="btn-ghost w-full justify-center text-error hover:bg-error/10 disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-[18px]">delete</span>
+              {deletingShiftId === selectedShift.id ? 'Deleting…' : 'Delete shift'}
             </button>
           </div>
         )}

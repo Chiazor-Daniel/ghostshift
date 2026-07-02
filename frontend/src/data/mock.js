@@ -978,7 +978,7 @@ export const pricingTiers = [
     name: 'Clinical',
     price: '$18',
     per: '/employee / mo',
-    description: 'For hospital units and mid-size departments with rotating schedules.',
+    description: 'For clinical units and mid-size departments with rotating schedules.',
     features: [
       'Everything in Starter, plus:',
       'LightGBM burnout prediction (full model)',

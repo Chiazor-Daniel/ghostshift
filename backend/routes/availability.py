@@ -1,7 +1,7 @@
 """Availability routes — production ready."""
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, Depends
@@ -32,7 +32,7 @@ def _serialize(a: Availability) -> dict:
 
 
 def _aid() -> str:
-    return f"av_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(4)}"
+    return f"av_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}"
 
 
 @router.get("/")
@@ -67,7 +67,7 @@ async def upsert_availability(request: Request, payload: dict, db: Session = Dep
         for k in ("start_time", "end_time", "status", "is_recurring", "notes"):
             if k in payload and payload[k] is not None:
                 setattr(existing, k, payload[k])
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(existing)
         return _serialize(existing)
@@ -82,7 +82,7 @@ async def upsert_availability(request: Request, payload: dict, db: Session = Dep
         status=payload.get("status", "available"),
         is_recurring=payload.get("is_recurring", True),
         notes=payload.get("notes"),
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(row)
     db.commit()
@@ -117,7 +117,7 @@ async def bulk_upsert(request: Request, payload: dict, db: Session = Depends(get
             status=e.get("status", "available"),
             is_recurring=e.get("is_recurring", True),
             notes=e.get("notes"),
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         db.add(row)
         created.append(row)

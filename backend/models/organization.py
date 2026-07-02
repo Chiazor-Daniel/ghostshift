@@ -4,7 +4,7 @@ Organization Model
 
 from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from config.database import Base
 
 
@@ -30,8 +30,8 @@ class Organization(Base):
     settings = Column(JSON, default=dict)
     features = Column(JSON, default=dict)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     users = relationship("User", back_populates="organization")
@@ -51,8 +51,8 @@ class Department(Base):
     headcount = Column(Integer, default=0)
     budget = Column(Integer, default=0)
     settings = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     organization = relationship("Organization", back_populates="departments")
@@ -79,8 +79,8 @@ class LeavePolicy(Base):
     min_notice_hours = Column(Integer, default=24)
     max_consecutive_days = Column(Integer, default=14)
     settings = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     organization = relationship("Organization", back_populates="leave_policies")

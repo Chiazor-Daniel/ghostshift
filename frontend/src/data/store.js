@@ -33,9 +33,19 @@ export function weekRange() {
 }
 
 export function formatDate(d) {
+  if (!d) return ''
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    const [y, m, day] = d.split('-').map(Number)
+    return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 export function formatDateFull(d) {
+  if (!d) return ''
+  if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    const [y, m, day] = d.split('-').map(Number)
+    return new Date(y, m - 1, day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  }
   return new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 export function timeLabel(h) {
@@ -166,14 +176,10 @@ export function addShift(shift) {
     startHour: 9,
     durationHours: 8,
     status: 'open',
-    certifications: [],
     notes: '',
     urgency: 'medium',
-    payDifferential: '+0%',
     eligible: 0,
     description: '',
-    trainingCredit: false,
-    seniorityPreference: 'none',
     requiredStaff: 1,
     assignedStaff: [],
     ...shift,
@@ -446,13 +452,6 @@ export function computeMatchScore(shiftId, employeeId) {
   if (weeklyPct > 0.9) score -= 20
   else if (weeklyPct > 0.7) score -= 10
 
-  // Certification match: required certs
-  if (shift.certifications && shift.certifications.length > 0) {
-    const empCerts = emp.certifications || []
-    const missing = shift.certifications.filter(c => !empCerts.includes(c))
-    score -= missing.length * 10
-  }
-
   // Night shift penalty: night shift + already has night shifts increases preference to avoid
   const isNight = shift.startHour >= 19 || shift.startHour <= 4
   if (isNight && burnout.nightShifts >= 3) score -= 10
@@ -642,7 +641,7 @@ const DEFAULT_POLICIES = {
   minRestGap: DEFAULT_REST_GAP,
   maxWeeklyHours: DEFAULT_MAX_WEEKLY,
   swapApprovalWindow: 48, // hours
-  premiumPayThreshold: 15, // percent
+
 }
 
 export function getPolicies() { return read('gs_policies', DEFAULT_POLICIES) }
@@ -866,7 +865,7 @@ export function seedData({ currentUser, managerUser, adminUser, employees, shift
     ...employees.map(e => ({
       id: e.id, name: e.name, email: `${e.name.toLowerCase().replace(/\s+/g, '.')}@stmarrys.health`,
       role: 'employee', password: 'password', title: e.role, department: e.dept,
-      avatar: e.avatar, certifications: e.certifications || [],
+      avatar: e.avatar,
       certExpiry: e.id === 'e-202' ? { BLS: '2026-07-05', ACLS: '2027-01-15', PALS: '2026-12-01' }
         : e.id === 'e-205' ? { BLS: '2026-08-20', ACLS: '2026-07-28', PALS: '2027-03-10', TNCC: '2026-11-15' }
         : e.id === 'e-207' ? { BLS: '2026-09-01', ACLS: '2026-07-18', CEN: '2027-06-01' }
@@ -891,7 +890,7 @@ export function seedData({ currentUser, managerUser, adminUser, employees, shift
   write('gs_shifts', shifts.map((s) => ({
     ...s,
     urgency: s.urgency || (s.status === 'open' ? 'medium' : 'low'),
-    payDifferential: s.payDifferential || '+0%',
+
     eligible: s.eligible || 0,
     description: s.notes || `${s.department} shift`,
     requiredStaff: s.requiredStaff || 1,

@@ -1,7 +1,7 @@
 """Leave request routes — production ready."""
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, Depends
@@ -10,6 +10,10 @@ from sqlalchemy.orm import Session
 from config.database import get_db
 from middleware.auth import get_current_user
 from models.leave import LeaveRequest
+from models.user import User
+from models.shift import Shift
+from ai_ml.assistant import ai_assistant
+from routes.shift import _serialize as _serialize_shift
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -22,8 +26,8 @@ def _serialize(l: LeaveRequest) -> dict:
         "employee_id": l.employee_id,
         "employee_name": l.employee_name,
         "type": l.type,
-        "start_date": l.start_date.isoformat() if l.start_date else None,
-        "end_date": l.end_date.isoformat() if l.end_date else None,
+        "start_date": l.start_date.astimezone(timezone.utc).date().isoformat() if l.start_date else None,
+        "end_date": l.end_date.astimezone(timezone.utc).date().isoformat() if l.end_date else None,
         "duration_days": l.duration_days,
         "status": l.status,
         "reason": l.reason,
@@ -37,20 +41,28 @@ def _serialize(l: LeaveRequest) -> dict:
 
 
 def _lid() -> str:
-    return f"lv_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(4)}"
+    return f"lv_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}"
 
 
 @router.get("/")
 async def list_leaves(request: Request, status_filter: Optional[str] = None,
-                     mine_only: bool = False, db: Session = Depends(get_db)):
+                     mine_only: bool = False, skip: int = 0, limit: int = 100,
+                     db: Session = Depends(get_db)):
     user = await get_current_user(request, db)
     q = db.query(LeaveRequest).filter(LeaveRequest.org_id == user.org_id)
     if status_filter:
         q = q.filter(LeaveRequest.status == status_filter)
     if mine_only:
         q = q.filter(LeaveRequest.employee_id == user.id)
-    rows = q.order_by(LeaveRequest.created_at.desc()).all()
-    return [_serialize(l) for l in rows]
+    skip = max(0, skip)
+    limit = max(1, min(limit, 200))
+    rows = q.order_by(LeaveRequest.created_at.desc()).offset(skip).limit(limit).all()
+    return {
+        "items": [_serialize(l) for l in rows],
+        "total": q.count(),
+        "skip": skip,
+        "limit": limit,
+    }
 
 
 @router.post("/")
@@ -68,12 +80,20 @@ async def create_leave(request: Request, payload: dict, db: Session = Depends(ge
         if "T" in str(start_str):
             start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
         else:
-            start_dt = datetime.fromisoformat(f"{start_str}T00:00:00")
+            # Parse date string and create UTC-aware datetime at midnight
+            date_parts = str(start_str).split('-')
+            year, month, day = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
+            start_dt = datetime(year, month, day, 0, 0, 0, tzinfo=timezone.utc)
+        
         if "T" in str(end_str):
             end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
         else:
-            end_dt = datetime.fromisoformat(f"{end_str}T00:00:00")
-    except ValueError:
+            # Parse date string and create UTC-aware datetime at end of day
+            date_parts = str(end_str).split('-')
+            year, month, day = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
+            end_dt = datetime(year, month, day, 23, 59, 59, tzinfo=timezone.utc)
+    except (ValueError, IndexError) as e:
+        logger.error(f"Failed to parse leave dates: {start_str} to {end_str} - {e}")
         raise HTTPException(status_code=400, detail="Invalid date format")
 
     duration_days = (end_dt.date() - start_dt.date()).days + 1
@@ -88,7 +108,7 @@ async def create_leave(request: Request, payload: dict, db: Session = Depends(ge
         duration_days=duration_days,
         reason=payload.get("reason"),
         status="pending",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(leave)
     db.commit()
@@ -107,6 +127,46 @@ async def get_leave(request: Request, leave_id: str, db: Session = Depends(get_d
     return _serialize(leave)
 
 
+@router.get("/{leave_id}/reasoning")
+async def get_leave_reasoning(request: Request, leave_id: str, db: Session = Depends(get_db)):
+    user = await get_current_user(request, db)
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    leave = db.query(LeaveRequest).filter(
+        LeaveRequest.id == leave_id, LeaveRequest.org_id == user.org_id
+    ).first()
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave request not found")
+
+    requester = db.query(User).filter(User.id == leave.employee_id).first()
+    shifts = db.query(Shift).filter(Shift.org_id == user.org_id).all()
+
+    # Build employee work history from actual check-in / check-out records.
+    requester_shifts = [s for s in shifts if s.employee_id == leave.employee_id or (leave.employee_id in (s.assigned_staff or []))]
+    completed_shifts = [s for s in requester_shifts if s.check_in_at and s.check_out_at]
+    total_assigned = len(requester_shifts)
+    total_completed = len(completed_shifts)
+    last_check_out = max((s.check_out_at for s in completed_shifts), default=None)
+
+    work_history = {
+        "total_assigned_shifts": total_assigned,
+        "total_completed_shifts": total_completed,
+        "last_check_out": last_check_out.isoformat() if last_check_out else None,
+    }
+
+    result = ai_assistant.explain_leave_decision(
+        leave=_serialize(leave),
+        requester={
+            "name": requester.name,
+            "department": requester.department,
+            "created_at": requester.created_at.isoformat() if requester and requester.created_at else None,
+        } if requester else {"name": "Unknown", "department": "Unknown"},
+        org_shifts=[_serialize_shift(s) for s in shifts],
+        work_history=work_history,
+    )
+    return result
+
+
 async def _decide(leave_id: str, decision: str, request: Request, db: Session):
     user = await get_current_user(request, db)
     if user.role != "admin":
@@ -121,12 +181,12 @@ async def _decide(leave_id: str, decision: str, request: Request, db: Session):
     if decision == "approve":
         leave.status = "approved"
         leave.approved_by = user.id
-        leave.approved_at = datetime.utcnow()
+        leave.approved_at = datetime.now(timezone.utc)
     else:
         leave.status = "rejected"
-        leave.rejected_at = datetime.utcnow()
-    leave.decided_at = datetime.utcnow()
-    leave.updated_at = datetime.utcnow()
+        leave.rejected_at = datetime.now(timezone.utc)
+    leave.decided_at = datetime.now(timezone.utc)
+    leave.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(leave)
     return _serialize(leave)
@@ -166,6 +226,6 @@ async def cancel_leave(request: Request, leave_id: str, db: Session = Depends(ge
     if leave.employee_id != user.id and user.role != "admin":
         raise HTTPException(status_code=403, detail="Cannot cancel someone else's leave")
     leave.status = "cancelled"
-    leave.updated_at = datetime.utcnow()
+    leave.updated_at = datetime.now(timezone.utc)
     db.commit()
     return {"message": "Leave cancelled", "id": leave_id}

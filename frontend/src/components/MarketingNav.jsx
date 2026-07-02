@@ -35,7 +35,7 @@ export default function MarketingNav() {
           {[
             { label: 'Product', to: '/#product' },
             { label: 'How it works', to: '/#how' },
-            { label: 'Customers', to: '/#testimonials' },
+            { label: 'Use Cases', to: '/#use-cases' },
           ].map((item) => (
             <a
               key={item.label}
@@ -51,11 +51,11 @@ export default function MarketingNav() {
           <button onClick={toggleTheme} className="btn-icon-sm hidden sm:flex" aria-label="Toggle theme">
             <span className="material-symbols-outlined text-[20px]">{dark ? 'light_mode' : 'dark_mode'}</span>
           </button>
-          <Link to="/login" className="btn-ghost hidden sm:inline-flex">
-            Sign in
+          <Link to="/login" className="btn-primary hidden sm:inline-flex px-md py-sm text-sm shadow-soft-sm">
+            Live Demo
           </Link>
-          <Link to="/signup" className="btn-secondary hidden sm:inline-flex">
-            Create account
+          <Link to="/signup" className="btn-ghost hidden sm:inline-flex">
+            Sign up
           </Link>
           <button
             onClick={() => setOpen(!open)}
@@ -73,7 +73,7 @@ export default function MarketingNav() {
             {[
               { label: 'Product', to: '/#product' },
               { label: 'How it works', to: '/#how' },
-              { label: 'Customers', to: '/#testimonials' },
+              { label: 'Use Cases', to: '/#use-cases' },
             ].map((item) => (
               <a key={item.label} href={item.to} onClick={() => setOpen(false)} className="font-label-md text-label-md text-on-surface-variant hover:text-on-surface py-1">
                 {item.label}
@@ -81,11 +81,11 @@ export default function MarketingNav() {
             ))}
           </div>
           <div className="flex items-center gap-2 pt-2 border-t border-outline-variant/20">
-            <Link to="/login" onClick={() => setOpen(false)} className="btn-secondary py-xs px-sm text-xs">
-              Sign in
+            <Link to="/login" onClick={() => setOpen(false)} className="btn-primary py-xs px-sm text-xs shadow-soft-sm">
+              Live Demo
             </Link>
-            <Link to="/signup" onClick={() => setOpen(false)} className="btn-primary py-xs px-sm text-xs">
-              Create account
+            <Link to="/signup" onClick={() => setOpen(false)} className="btn-ghost py-xs px-sm text-xs">
+              Sign up
             </Link>
             <button onClick={toggleTheme} className="btn-secondary py-xs px-sm text-xs flex items-center gap-1">
               <span className="material-symbols-outlined text-[16px]">{dark ? 'light_mode' : 'dark_mode'}</span>

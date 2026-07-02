@@ -176,7 +176,7 @@ export default function PricingPage() {
               },
               {
                 q: 'Do you offer discounts for non-profits or academic medical centers?',
-                a: 'Yes — 30% off list price for 501(c)(3) hospitals and academic medical centers. Contact sales for details.',
+                a: 'Yes — 30% off list price for 501(c)(3) non-profits and academic institutions. Contact sales for details.',
               },
             ].map((item, i) => (
               <details

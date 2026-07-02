@@ -198,7 +198,7 @@ const IntegrationDemo = () => {
                       {shift.title}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {shift.date ? new Date(shift.date).toLocaleDateString() : 'N/A'}
+                      {shift.date ? (() => { const [y,m,d]=shift.date.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString() })() : 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {shift.department || shift.dept || 'N/A'}

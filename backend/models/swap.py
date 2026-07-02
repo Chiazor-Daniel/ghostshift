@@ -2,9 +2,9 @@
 Swap Request Model - Shift swapping
 """
 
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Enum
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Enum, Index
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from config.database import Base
 import enum
 
@@ -19,23 +19,30 @@ class SwapStatus(str, enum.Enum):
 
 class SwapRequest(Base):
     __tablename__ = "swap_requests"
+    __table_args__ = (
+        Index('idx_swap_org_status_kind', 'org_id', 'status', 'kind'),
+        Index('idx_swap_requester_shift', 'requester_id', 'requester_shift_id'),
+    )
 
     id = Column(String(50), primary_key=True, index=True)
     org_id = Column(String(50), ForeignKey("organizations.id", name="fk_swap_org"), nullable=False)
     requester_id = Column(String(50), ForeignKey("users.id", name="fk_swap_requester"), nullable=False)
     responder_id = Column(String(50), ForeignKey("users.id", name="fk_swap_responder"))
-    requester_shift_id = Column(String(50), ForeignKey("shifts.id", name="fk_swap_requester_shift"), nullable=False)
+    requester_shift_id = Column(String(50), ForeignKey("shifts.id", name="fk_swap_requester_shift"), nullable=True)
     responder_shift_id = Column(String(50), ForeignKey("shifts.id", name="fk_swap_responder_shift"))
     target_employee_id = Column(String(50), ForeignKey("users.id", name="fk_swap_target_emp"))
+    # 'swap' = requester gives up requester_shift for responder_shift
+    # 'pickup' = requester claims an open shift from the marketplace
+    kind = Column(String(20), default="swap", nullable=False)
     reason = Column(String(500))
     status = Column(String(20), default="pending", nullable=False, index=True)
     ai_match_score = Column(Integer, default=80)
     message = Column(String(500))
-    expires_at = Column(DateTime)
-    approved_at = Column(DateTime)
-    rejected_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    expires_at = Column(DateTime(timezone=True))
+    approved_at = Column(DateTime(timezone=True))
+    rejected_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     organization = relationship("Organization")

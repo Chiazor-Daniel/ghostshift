@@ -1,10 +1,11 @@
 import { NavLink, useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Logo from './Logo.jsx'
 import { useToast } from './Toast.jsx'
-import { getNotifications } from '../data/store.js'
+import { useAuth } from '../hooks/useAuth.jsx'
 import { Avatar } from './ui.jsx'
+import { realAPI } from '../services/realAPI.js'
 
 function initialsFor(name) {
   if (!name) return '?'
@@ -16,13 +17,14 @@ function initialsFor(name) {
 const navItems = [
   { to: '/app/dashboard', label: 'Dashboard', icon: 'dashboard', roles: ['admin'] },
   { to: '/app/employee', label: 'My Portal', icon: 'person', roles: ['employee'] },
-  { to: '/app/marketplace', label: 'Shifts', icon: 'storefront', roles: ['employee', 'admin'] },
-  { to: '/app/swaps', label: 'Swap Requests', icon: 'swap_horiz', roles: ['admin'] },
+  { to: '/app/marketplace', label: 'Shift Marketplace', icon: 'storefront', roles: ['employee', 'admin'] },
+  { to: '/app/my-swaps', label: 'My Swap Requests', icon: 'swap_horiz', roles: ['employee'] },
+  { to: '/app/swaps', label: 'Swap Review', icon: 'swap_horiz', roles: ['admin'] },
+  { to: '/app/leaves', label: 'Absence Requests', icon: 'event_busy', roles: ['employee', 'admin'] },
   { to: '/app/availability', label: 'Availability', icon: 'event_available', roles: ['employee', 'admin'] },
-  { to: '/app/insights', label: 'Health Analytics', icon: 'monitor_heart', roles: ['admin'] },
+  { to: '/app/attendance', label: 'Attendance', icon: 'schedule', roles: ['admin'] },
   { to: '/app/employees', label: 'Employees', icon: 'groups', roles: ['admin'] },
-  { to: '/app/admin', label: 'Admin Settings', icon: 'settings_applications', roles: ['admin'] },
-  { to: '/app/leaves', label: 'Leave Requests', icon: 'event_busy', roles: ['employee', 'admin'] },
+  { to: '/app/insights', label: 'AI Insights', icon: 'monitor_heart', roles: ['admin'] },
 ]
 
 export default function Sidebar({
@@ -80,9 +82,23 @@ export default function Sidebar({
 function SidebarContent({ user, activeRole, collapsed, onToggleCollapse, mobile, onNavigate }) {
   const navigate = useNavigate()
   const toast = useToast()
+  const { logout } = useAuth()
   const items = navItems.filter((n) => n.roles.includes(activeRole))
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
-  const unreadCount = getNotifications(true).length
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    async function fetchCount() {
+      try {
+        const notifs = await realAPI.getNotifications()
+        if (!cancelled) setUnreadCount((notifs || []).filter(n => n.status !== 'read').length)
+      } catch { /* ignore */ }
+    }
+    fetchCount()
+    const id = setInterval(fetchCount, 60_000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
   const toggleTheme = useCallback(() => {
     const next = !dark
     setDark(next)
@@ -182,17 +198,6 @@ function SidebarContent({ user, activeRole, collapsed, onToggleCollapse, mobile,
           )}
           {collapsed && unreadCount > 0 && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-error" />}
         </NavLink>
-        <NavLink
-          to="/app/support"
-          onClick={onNavigate}
-          title={collapsed ? 'Support' : undefined}
-          className={`flex items-center gap-sm rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all font-label-md text-label-md ${
-            collapsed ? 'justify-center w-10 h-10 mx-auto' : 'px-md py-sm'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[20px]">help_outline</span>
-          {!collapsed && 'Support'}
-        </NavLink>
       </div>
 
       {/* Theme toggle */}
@@ -206,6 +211,23 @@ function SidebarContent({ user, activeRole, collapsed, onToggleCollapse, mobile,
         <span className="material-symbols-outlined text-[20px]">{dark ? 'light_mode' : 'dark_mode'}</span>
         {!collapsed && (dark ? 'Light mode' : 'Dark mode')}
       </button>
+
+      <NavLink
+        to="/app/admin"
+        title={collapsed ? 'Settings' : undefined}
+        className={({ isActive }) =>
+          `relative flex items-center gap-sm rounded-xl transition-all duration-200 font-label-md text-label-md ${
+            collapsed ? 'justify-center w-10 h-10 mx-auto' : 'px-md py-sm'
+          } ${
+            isActive
+              ? 'bg-primary text-on-primary font-semibold shadow-soft-sm'
+              : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+          }`
+        }
+      >
+        <span className="material-symbols-outlined text-[20px] flex-shrink-0">settings</span>
+        {!collapsed && 'Settings'}
+      </NavLink>
 
       <div className="mt-1 pt-3 border-t border-outline-variant/30">
         <div className={`flex items-center gap-sm ${collapsed ? 'justify-center' : 'px-sm'}`}>
@@ -223,15 +245,28 @@ function SidebarContent({ user, activeRole, collapsed, onToggleCollapse, mobile,
           )}
         </div>
         {!collapsed && (
-          <div className="mt-3 px-sm">
-            <div className="flex items-center gap-2 mb-2">
+          <div className="mt-3 px-sm space-y-2">
+            <div className="flex items-center gap-2">
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary">
                 {activeRole}
               </span>
             </div>
+            <NavLink
+              to="/app/admin"
+              className={({ isActive }) =>
+                `flex items-center gap-sm rounded-lg px-2 py-1.5 text-label-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                }`
+              }
+            >
+              <span className="material-symbols-outlined text-[16px]">settings</span>
+              Profile & settings
+            </NavLink>
             <button
-              onClick={() => { localStorage.removeItem('gs_user'); toast.push('Signed out', { tone: 'info' }); navigate('/login') }}
-              className="mt-2 w-full flex items-center justify-center gap-sm rounded-xl border border-error/30 py-1.5 text-label-sm font-medium text-error hover:bg-error/5 transition-all"
+              onClick={() => { logout(); toast.push('Signed out', { tone: 'info' }); navigate('/login') }}
+              className="w-full flex items-center justify-center gap-sm rounded-xl border border-error/30 py-1.5 text-label-sm font-medium text-error hover:bg-error/5 transition-all"
             >
               <span className="material-symbols-outlined text-[16px]">logout</span>
               Sign out

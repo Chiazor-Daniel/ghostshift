@@ -6,7 +6,7 @@ import os
 import pickle
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 import logging
 
@@ -50,39 +50,70 @@ class BurnoutPredictor:
             logger.error(f"Error loading burnout model: {e}")
 
     def predict(self, employee_data: Dict) -> Dict:
-        """Predict burnout risk for an employee"""
+        """Predict burnout risk for an employee.
+        If no trained model exists, returns a transparent rule-based fallback."""
         try:
             # Prepare features
             features = self._prepare_features(employee_data)
-            
+
+            if not self.model:
+                # Rule-based fallback when no trained model is available.
+                # We still give useful guidance, but we tell the UI this is not ML.
+                hours_week = employee_data.get('hours_worked_week', 40)
+                consecutive = employee_data.get('consecutive_shifts', 0)
+                days_rest = employee_data.get('days_since_rest', 1)
+                overtime = employee_data.get('overtime_hours', 0)
+
+                score = 30
+                if hours_week > 40:
+                    score += min((hours_week - 40) * 3, 25)
+                if consecutive >= 6:
+                    score += 20
+                elif consecutive >= 4:
+                    score += 10
+                if days_rest >= 7:
+                    score += 10
+                if overtime > 10:
+                    score += 10
+                score = min(100, max(0, score))
+
+                return {
+                    "burnout_score": score,
+                    "risk_level": self._get_risk_level(score),
+                    "model_trained": False,
+                    "model": "rule-based",
+                    "factors": self._analyze_factors(features),
+                    "recommendations": self._get_recommendations(score)
+                }
+
             # Make prediction
-            if self.model:
-                prediction = self.model.predict(features.reshape(1, -1))[0]
-                probability = self.model.predict_proba(features.reshape(1, -1))[0]
-            else:
-                # Default prediction if model not loaded
-                prediction = 0.3  # Default moderate risk
-                probability = [0.4, 0.3, 0.3]  # Low, Medium, High probabilities
-            
+            prediction = self.model.predict(features.reshape(1, -1))[0]
+            probability = self.model.predict_proba(features.reshape(1, -1))[0]
+
             # Convert to burnout score (0-100)
             burnout_score = int(prediction * 100)
-            
+
             return {
                 "burnout_score": burnout_score,
                 "risk_level": self._get_risk_level(burnout_score),
                 "probability_low": round(probability[0], 3),
                 "probability_medium": round(probability[1], 3),
                 "probability_high": round(probability[2], 3),
+                "model_trained": True,
+                "model": "lightgbm",
                 "factors": self._analyze_factors(features),
                 "recommendations": self._get_recommendations(burnout_score)
             }
-            
+
         except Exception as e:
             logger.error(f"Error predicting burnout: {e}")
             return {
                 "burnout_score": 50,
                 "risk_level": "moderate",
-                "error": str(e)
+                "model_trained": False,
+                "model": "error",
+                "error": str(e),
+                "recommendations": self._get_recommendations(50)
             }
 
     def _prepare_features(self, employee_data: Dict) -> np.ndarray:

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import Logo from '../components/Logo.jsx'
+import { PasswordInput } from '../components/ui.jsx'
 import { roleHome } from '../data/roles.js'
 import { useAuth } from '../hooks/useAuth.jsx'
 
@@ -13,8 +14,9 @@ export default function LoginPage() {
   const location = useLocation()
   const { login } = useAuth()
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  // Pre-fill from invite link so the new employee doesn't have to retype credentials
+  const [email, setEmail] = useState(location.state?.prefilledEmail || '')
+  const [password, setPassword] = useState(location.state?.prefilledPassword || '')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -99,7 +101,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
-                placeholder="you@hospital.org"
+                placeholder="you@yourteam.com"
                 className="input-base mt-xs"
                 required
               />
@@ -110,18 +112,16 @@ export default function LoginPage() {
                 <label htmlFor="password" className="font-label-md text-label-md text-on-surface font-medium">
                   Password
                 </label>
-                <button
-                  type="button"
+                <Link
+                  to="/forgot-password"
                   className="font-label-sm text-label-sm text-primary hover:underline"
-                  onClick={() => alert('Password reset: contact your admin or use the invite link your admin sent you.')}
                 >
                   Forgot?
-                </button>
+                </Link>
               </div>
-              <input
+              <PasswordInput
                 id="password"
                 name="password"
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
@@ -194,7 +194,7 @@ export default function LoginPage() {
               Work shouldn't burn you out.
             </h1>
             <p className="mt-md font-body-lg text-body-lg opacity-90 leading-relaxed">
-              The intelligent shift-swap and burnout-prediction platform trusted by 200+ healthcare teams.
+              The intelligent shift-swap and burnout-prediction platform trusted by 200+ shift-based teams.
             </p>
 
             <div className="mt-xl space-y-sm">
@@ -212,7 +212,7 @@ export default function LoginPage() {
           </div>
 
           <div className="font-label-sm text-label-sm opacity-70">
-            SOC 2 · HIPAA · ISO 27001
+            SOC 2 · ISO 27001 · GDPR-ready
           </div>
         </div>
       </div>

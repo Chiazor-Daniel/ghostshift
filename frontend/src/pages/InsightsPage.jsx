@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
+  BarChart,
+  Bar,
   LineChart,
   Line,
   ResponsiveContainer,
@@ -8,6 +11,7 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
+  Cell,
 } from 'recharts'
 
 import { Card, CardHeader, Badge, ProgressBar, Modal, Avatar } from '../components/ui.jsx'
@@ -25,26 +29,38 @@ export default function InsightsPage() {
   const [burnout, setBurnout] = useState(null)
   const [coverage, setCoverage] = useState(null)
   const [staffing, setStaffing] = useState(null)
+  const [attendance, setAttendance] = useState(null)
   const [employees, setEmployees] = useState([])
   const [shifts, setShifts] = useState([])
+  const [swaps, setSwaps] = useState([])
+  const [leaves, setLeaves] = useState([])
+  const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     ;(async () => {
       setLoading(true)
       try {
-        const [b, c, s, emps, sh] = await Promise.all([
+        const [b, c, s, a, emps, sh, sw, lv, sum] = await Promise.all([
           realAPI.getBurnoutAnalytics(),
           realAPI.getCoverageAnalytics(),
           realAPI.getStaffingAnalytics(),
+          realAPI.getAttendanceAnalytics(),
           realAPI.getEmployees(),
           realAPI.getShifts(),
+          realAPI.getSwaps(),
+          realAPI.getLeaves(),
+          realAPI.getExecutiveSummary(),
         ])
         setBurnout(b || { employees: [], high_risk: 0, moderate_risk: 0, low_risk: 0 })
         setCoverage(c || {})
         setStaffing(s || {})
+        setAttendance(a || null)
         setEmployees(emps || [])
         setShifts(sh || [])
+        setSwaps(sw || [])
+        setLeaves(lv || [])
+        setSummary(sum?.summary || null)
       } catch (err) {
         toast.push(err.message || 'Could not load insights', { tone: 'error' })
       } finally {
@@ -85,15 +101,6 @@ export default function InsightsPage() {
     return Object.entries(buckets).map(([range, count]) => ({ range, count }))
   }, [allBurnout])
 
-  const riskTrend = useMemo(() => {
-    const weeks = ['Wk -4', 'Wk -3', 'Wk -2', 'Wk -1', 'This wk']
-    return weeks.map((week, i) => ({
-      week,
-      risk: Math.max(0, Math.min(100, Math.round(avgBurnout + (i - 2) * 2 + (i % 2 === 0 ? 3 : -2)))),
-      baseline: avgBurnout,
-    }))
-  }, [avgBurnout])
-
   const deptHealth = useMemo(() => {
     return deptBurnout.map((d) => {
       const health = Math.max(0, Math.min(100, 100 - d.avg))
@@ -107,14 +114,15 @@ export default function InsightsPage() {
   }, [deptBurnout])
 
   const fairness = useMemo(() => {
-    const stats = employees.map((emp) => {
+    const stats = employees.filter((e) => e.role !== 'admin').map((emp) => {
       const empShifts = shifts.filter((s) => (s.assigned_staff || []).includes(emp.id))
       let weekendShifts = 0
       let nightShifts = 0
       let totalHours = 0
       empShifts.forEach((s) => {
         if (s.date) {
-          const dt = new Date(s.date)
+          const [y, m, d] = s.date.split('-').map(Number)
+          const dt = new Date(y, m - 1, d)
           if (dt.getDay() === 0 || dt.getDay() === 6) weekendShifts++
         }
         if ((s.start_hour || 0) >= 19 || (s.start_hour || 0) <= 4) nightShifts++
@@ -143,29 +151,70 @@ export default function InsightsPage() {
     return coverage?.coverage_rate ? Math.round(coverage.coverage_rate) : 0
   }, [coverage])
 
+  const swapAnalytics = useMemo(() => {
+    const total = swaps.length
+    const pending = swaps.filter((s) => s.status === 'pending').length
+    const approved = swaps.filter((s) => s.status === 'approved').length
+    const declined = swaps.filter((s) => s.status === 'declined' || s.status === 'rejected').length
+    const approvalRate = total > 0 ? Math.round((approved / total) * 100) : 0
+    const pickups = swaps.filter((s) => s.kind === 'pickup').length
+    const trades = swaps.filter((s) => s.kind === 'swap').length
+    return { total, pending, approved, declined, approvalRate, pickups, trades }
+  }, [swaps])
+
+  const leaveAnalytics = useMemo(() => {
+    const total = leaves.length
+    const pending = leaves.filter((l) => l.status === 'pending').length
+    const approved = leaves.filter((l) => l.status === 'approved').length
+    const declined = leaves.filter((l) => l.status === 'declined').length
+    const approvalRate = total > 0 ? Math.round((approved / total) * 100) : 0
+    return { total, pending, approved, declined, approvalRate }
+  }, [leaves])
+
+  const attendanceData = useMemo(() => {
+    if (!attendance) return null
+    return [
+      { label: 'Completed', value: attendance.total_shifts_completed || 0 },
+      { label: 'On-time', value: attendance.on_time_count || 0 },
+      { label: 'Late', value: attendance.late_count || 0 },
+    ]
+  }, [attendance])
+
   return (
     <>
       <div className="mb-6">
-        <h1 className="font-display-sm font-bold text-on-surface">HR & Burnout Insights</h1>
+        <h1 className="font-display-sm font-bold text-on-surface">AI Insights</h1>
+        <p className="font-body-md text-body-md text-on-surface-variant mt-1">
+          Real-time operational analytics from your team's shifts, attendance, swaps, and absences.
+        </p>
       </div>
       <section className="page-section">
+        {loading && <ListSkeleton variant="card" count={3} />}
+
+        {!loading && (
+        <>
+        {/* AI Executive Summary */}
+        {summary && (
+          <Card hover={false} className="border-primary/20 bg-gradient-to-r from-primary/5 via-accent/5 to-surface">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent text-on-primary flex items-center justify-center flex-shrink-0">
+                <span className="material-symbols-outlined text-[24px]">auto_awesome</span>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <h2 className="font-headline-md text-lg md:text-headline-lg font-bold text-on-surface">AI Executive Summary</h2>
+                  <Badge variant="primary">Live</Badge>
+                </div>
+                <p className="font-body-md text-body-md text-on-surface leading-relaxed">
+                  {summary}
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* KPI row */}
         <div className="responsive-grid">
-          <KpiCard
-            label="Avg burnout index"
-            value={allBurnout.length === 0 ? '—' : String(avgBurnout)}
-            delta={highRiskCount > 0 ? `${highRiskCount} high` : 'stable'}
-            deltaColor={highRiskCount > 0 ? 'error' : 'success'}
-            trend={highRiskCount > 0 ? 'up-bad' : 'down-good'}
-            icon="favorite"
-          />
-          <KpiCard
-            label="High risk staff"
-            value={String(highRiskCount)}
-            delta={burnout?.moderate_risk > 0 ? `${burnout.moderate_risk} moderate` : 'low'}
-            deltaColor={highRiskCount > 0 ? 'error' : 'success'}
-            trend="up-bad"
-            icon="priority_high"
-          />
           <KpiCard
             label="Coverage rate"
             value={`${ptoUtilization}%`}
@@ -175,164 +224,246 @@ export default function InsightsPage() {
             icon="event_available"
           />
           <KpiCard
-            label="Team size"
-            value={String(staffing?.total_employees || employees.length)}
-            delta={`${staffing?.active_employees || 0} active`}
-            deltaColor="success"
+            label="Check-in rate"
+            value={attendance && attendance.total_shifts_completed > 0 ? `${attendance.on_time_rate}%` : '—'}
+            delta={attendance ? `${attendance.total_shifts_completed} shift${attendance.total_shifts_completed === 1 ? '' : 's'} logged` : 'no data yet'}
+            deltaColor={attendance?.on_time_rate >= 80 ? 'success' : attendance?.on_time_rate >= 50 ? 'warning' : 'error'}
             trend="up-good"
-            icon="groups"
+            icon="schedule"
+          />
+          <KpiCard
+            label="Swap approval"
+            value={swapAnalytics.total > 0 ? `${swapAnalytics.approvalRate}%` : '—'}
+            delta={`${swapAnalytics.pending} pending`}
+            deltaColor={swapAnalytics.approvalRate >= 70 ? 'success' : swapAnalytics.approvalRate >= 40 ? 'warning' : 'error'}
+            trend={swapAnalytics.approvalRate >= 70 ? 'up-good' : 'up-bad'}
+            icon="swap_horiz"
+          />
+          <KpiCard
+            label="Leave approval"
+            value={leaveAnalytics.total > 0 ? `${leaveAnalytics.approvalRate}%` : '—'}
+            delta={`${leaveAnalytics.pending} pending`}
+            deltaColor={leaveAnalytics.approvalRate >= 70 ? 'success' : 'warning'}
+            trend="up-good"
+            icon="event_busy"
+          />
+          <KpiCard
+            label="Avg burnout"
+            value={allBurnout.length === 0 ? '—' : String(avgBurnout)}
+            delta={highRiskCount > 0 ? `${highRiskCount} at risk` : 'stable'}
+            deltaColor={highRiskCount > 0 ? 'error' : 'success'}
+            trend={highRiskCount > 0 ? 'up-bad' : 'down-good'}
+            icon="favorite"
           />
         </div>
 
-        <Card className="p-0 overflow-hidden" hover={false}>
-          <div className="px-4 py-3 md:px-md md:py-md flex flex-wrap items-center justify-between gap-sm border-b border-outline-variant/30">
-            <div>
-              <h2 className="font-headline-md text-lg md:text-headline-lg text-on-surface font-bold">
-                Burnout Heatmap
-              </h2>
-              <p className="font-body-sm text-body-sm text-on-surface-variant">
-                By department · Color intensity = predicted burnout score
-              </p>
+        {/* Attendance bar chart */}
+        {attendanceData && (
+          <Card hover={false}>
+            <CardHeader icon="schedule" title="Attendance Overview" subtitle="Completed shifts vs on-time vs late check-ins" />
+            <div className="w-full" style={{ height: 220 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={attendanceData} margin={{ top: 16, right: 16, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis dataKey="label" stroke="#94a3b8" fontSize={12} tickLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                  <Tooltip
+                    contentStyle={{
+                      background: 'rgba(255,255,255,0.95)',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 12,
+                      fontSize: 12,
+                    }}
+                  />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={48}>
+                    {attendanceData.map((entry, i) => (
+                      <Cell key={i} fill={entry.label === 'Late' ? '#ef4444' : entry.label === 'On-time' ? '#22c55e' : '#3b82f6'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-            <Badge variant="info">{deptBurnout.length} departments tracked</Badge>
-          </div>
-          <div className="p-4 overflow-x-auto">
-            {loading ? (
-              <div className="py-2"><ListSkeleton variant="row" count={3} /></div>
-            ) : deptBurnout.length === 0 ? (
+            {attendance && (
+              <div className="mt-2 flex items-center justify-between font-label-sm text-label-sm text-on-surface-variant border-t border-outline-variant/30 pt-3">
+                <span>{attendance.total_shifts_completed} total completed shifts</span>
+                <span>Avg variance: {attendance.variance_minutes > 0 ? '+' : ''}{attendance.variance_minutes}m</span>
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Coverage by department */}
+        {coverage?.by_department && (
+          <Card hover={false}>
+            <CardHeader icon="donut_small" title="Coverage by Department" subtitle="Filled vs open shifts per department" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+              {Object.entries(coverage.by_department).map(([dept, data]) => {
+                const fillRate = data.total > 0 ? Math.round((data.filled / data.total) * 100) : 0
+                return (
+                  <div key={dept} className="p-4 rounded-xl border border-outline-variant/30">
+                    <div className="font-label-md text-label-md font-bold text-on-surface">{dept}</div>
+                    <div className="mt-2 flex items-baseline gap-1">
+                      <span className="font-headline-md text-xl font-bold text-on-surface">{fillRate}%</span>
+                      <span className="font-label-sm text-label-sm text-on-surface-variant">filled</span>
+                    </div>
+                    <ProgressBar value={fillRate} color={fillRate >= 80 ? 'success' : fillRate >= 50 ? 'warning' : 'error'} />
+                    <div className="mt-1 flex justify-between font-label-sm text-label-sm text-on-surface-variant">
+                      <span>{data.filled} filled</span>
+                      <span>{data.open} open</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
+        )}
+
+        {/* Swap & Leave Analytics */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <Card hover={false}>
+            <CardHeader icon="swap_horiz" title="Swap Requests" subtitle="Pickup and trade activity" />
+            {swapAnalytics.total === 0 ? (
+              <div className="text-center py-8 text-on-surface-variant text-sm">No swap activity yet.</div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div className="p-4 rounded-xl bg-primary/5">
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Total</div>
+                  <div className="font-headline-lg text-headline-lg font-bold text-on-surface mt-1">{swapAnalytics.total}</div>
+                </div>
+                <div className="p-4 rounded-xl bg-success/5">
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Approved</div>
+                  <div className="font-headline-lg text-headline-lg font-bold text-success mt-1">{swapAnalytics.approved}</div>
+                </div>
+                <div className="p-4 rounded-xl bg-warning/5">
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Pending</div>
+                  <div className="font-headline-lg text-headline-lg font-bold text-warning mt-1">{swapAnalytics.pending}</div>
+                </div>
+                <div className="p-4 rounded-xl bg-error/5">
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Declined</div>
+                  <div className="font-headline-lg text-headline-lg font-bold text-error mt-1">{swapAnalytics.declined}</div>
+                </div>
+                <div className="col-span-2 p-4 rounded-xl bg-surface-variant/30">
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Breakdown</div>
+                  <div className="flex items-center gap-4 mt-2">
+                    <span className="font-label-md text-label-md text-on-surface">
+                      <span className="font-bold">{swapAnalytics.pickups}</span> pickups
+                    </span>
+                    <span className="text-on-surface-variant">·</span>
+                    <span className="font-label-md text-label-md text-on-surface">
+                      <span className="font-bold">{swapAnalytics.trades}</span> trades
+                    </span>
+                    <span className="text-on-surface-variant">·</span>
+                    <span className="font-label-md text-label-md text-on-surface">
+                      <span className="font-bold">{swapAnalytics.approvalRate}%</span> approval rate
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card hover={false}>
+            <CardHeader icon="event_busy" title="Leave Requests" subtitle="Time-off utilization" />
+            {leaveAnalytics.total === 0 ? (
+              <div className="text-center py-8 text-on-surface-variant text-sm">No leave requests yet.</div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div className="p-4 rounded-xl bg-primary/5">
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Total</div>
+                  <div className="font-headline-lg text-headline-lg font-bold text-on-surface mt-1">{leaveAnalytics.total}</div>
+                </div>
+                <div className="p-4 rounded-xl bg-success/5">
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Approved</div>
+                  <div className="font-headline-lg text-headline-lg font-bold text-success mt-1">{leaveAnalytics.approved}</div>
+                </div>
+                <div className="p-4 rounded-xl bg-warning/5">
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Pending</div>
+                  <div className="font-headline-lg text-headline-lg font-bold text-warning mt-1">{leaveAnalytics.pending}</div>
+                </div>
+                <div className="p-4 rounded-xl bg-error/5">
+                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Declined</div>
+                  <div className="font-headline-lg text-headline-lg font-bold text-error mt-1">{leaveAnalytics.declined}</div>
+                </div>
+                <div className="col-span-2 text-center font-label-sm text-label-sm text-on-surface-variant p-2">
+                  {leaveAnalytics.approvalRate}% approval rate
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* Burnout breakdown — simple table instead of heatmap */}
+        <Card hover={false}>
+          <CardHeader
+            icon="favorite"
+            title="Burnout overview"
+            subtitle="Per-department average score and at-risk staff"
+          />
+          <div className="overflow-x-auto">
+            {deptBurnout.length === 0 ? (
               <div className="text-center py-8 text-on-surface-variant text-sm">
                 No burnout data available. Add employees and shifts to see insights.
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-[110px_1fr_1fr] gap-1.5 min-w-[400px]">
-                  <div />
-                  <div className="text-center font-label-sm text-label-sm text-on-surface-variant font-bold">Avg Score</div>
-                  <div className="text-center font-label-sm text-label-sm text-on-surface-variant font-bold">At Risk</div>
-                  {deptBurnout.map((d) => {
-                    const intensity = d.avg / heatmapMax
-                    const isHigh = d.avg >= 70
-                    const isMid = d.avg >= 50 && d.avg < 70
-                    return (
-                      <div key={d.dept} className="contents">
-                        <div className="font-label-sm text-label-sm text-on-surface flex items-center">{d.dept}</div>
-                        <motion.button
-                          whileHover={{ scale: 1.05, zIndex: 10 }}
-                          onClick={() => {
-                            if (isHigh) { setDiagDept(d.dept); setDiagOpen(true) }
-                            else toast.push(`${d.dept}: score ${d.avg} (${isMid ? 'medium' : 'low'} risk)`, { tone: isMid ? 'warning' : 'info' })
-                          }}
-                          aria-label={`${d.dept} burnout: ${d.avg}`}
-                          className="aspect-square md:aspect-[1.4/1] rounded-lg relative overflow-hidden cursor-pointer group"
-                          style={{
-                            background: isHigh
-                              ? `linear-gradient(135deg, rgba(244,63,94,${0.25 + intensity * 0.7}), rgba(244,63,94,${0.4 + intensity * 0.5}))`
-                              : isMid
-                                ? `linear-gradient(135deg, rgba(245,158,11,${0.2 + intensity * 0.5}), rgba(245,158,11,${0.3 + intensity * 0.4}))`
-                                : `linear-gradient(135deg, rgba(16,185,129,${0.2 + intensity * 0.5}), rgba(16,185,129,${0.3 + intensity * 0.4}))`,
-                          }}
-                        >
-                          <div className="absolute inset-0 flex items-center justify-center font-label-sm md:font-label-md text-label-sm md:text-label-md font-bold text-white drop-shadow-md">
-                            {d.avg}
-                          </div>
-                          {isHigh && (
-                            <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-white animate-pulse" />
-                          )}
-                        </motion.button>
-                        <div
-                          className="aspect-square md:aspect-[1.4/1] rounded-lg flex items-center justify-center font-label-md font-bold"
-                          style={{
-                            background: d.high > 0
-                              ? 'linear-gradient(135deg, rgba(244,63,94,0.15), rgba(244,63,94,0.25))'
-                              : 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(16,185,129,0.15))',
-                          }}
-                        >
-                          <span className={d.high > 0 ? 'text-error' : 'text-success'}>
-                            {d.high}/{d.count}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                <table className="w-full min-w-[400px]">
+                  <thead>
+                    <tr className="text-left border-b border-outline-variant/30">
+                      <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2">Department</th>
+                      <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2">Average score</th>
+                      <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2">At risk</th>
+                      <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deptBurnout.map((d) => {
+                      const isHigh = d.avg >= 70
+                      const isMid = d.avg >= 50 && d.avg < 70
+                      const statusColor = isHigh ? 'text-error' : isMid ? 'text-warning' : 'text-success'
+                      const statusLabel = isHigh ? 'High risk' : isMid ? 'Medium risk' : 'Low risk'
+                      return (
+                        <tr key={d.dept} className="border-b border-outline-variant/20">
+                          <td className="py-3 font-label-md text-label-md text-on-surface">{d.dept}</td>
+                          <td className="py-3">
+                            <span className={`font-headline-sm text-headline-sm font-bold ${statusColor}`}>{d.avg}</span>
+                            <span className="text-on-surface-variant text-xs">/100</span>
+                          </td>
+                          <td className="py-3 font-label-md text-label-md text-on-surface">{d.high}/{d.count}</td>
+                          <td className="py-3">
+                            <Badge variant={isHigh ? 'error' : isMid ? 'warning' : 'success'}>{statusLabel}</Badge>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
 
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-sm">
-                  <div className="flex items-center gap-3 font-label-sm text-label-sm">
-                    <div className="flex items-center gap-1">
-                      <div className="w-5 h-3 rounded bg-success/40" />
-                      <span className="text-on-surface-variant">Low (0-49)</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-5 h-3 rounded bg-warning/60" />
-                      <span className="text-on-surface-variant">Medium (50-69)</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-5 h-3 rounded bg-error/70" />
-                      <span className="text-on-surface-variant">High (70+)</span>
-                    </div>
+                <div className="mt-4 flex items-center gap-3 font-label-sm text-label-sm">
+                  <div className="flex items-center gap-1">
+                    <div className="w-5 h-3 rounded bg-success/40" />
+                    <span className="text-on-surface-variant">Low (0-49)</span>
                   </div>
-                  <p className="font-label-sm text-label-sm text-on-surface-variant">
-                    Click any red cell to view diagnostic
-                  </p>
+                  <div className="flex items-center gap-1">
+                    <div className="w-5 h-3 rounded bg-warning/60" />
+                    <span className="text-on-surface-variant">Medium (50-69)</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-5 h-3 rounded bg-error/70" />
+                    <span className="text-on-surface-variant">High (70+)</span>
+                  </div>
                 </div>
               </>
             )}
           </div>
         </Card>
 
+        {/* Risk Distribution */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          <Card className="lg:col-span-7" hover={false}>
-            <CardHeader
-              icon="monitor_heart"
-              title="Burnout Risk Trend"
-              subtitle="Department averages vs org baseline"
-            />
-            {allBurnout.length === 0 ? (
-              <div className="flex items-center justify-center h-60 text-on-surface-variant text-sm">No risk trend data available.</div>
-            ) : (
-              <div className="w-full" style={{ height: 240 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={riskTrend} margin={{ left: -10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                    <XAxis dataKey="week" stroke="#94a3b8" fontSize={12} tickLine={false} />
-                    <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                    <Tooltip
-                      contentStyle={{
-                        background: 'rgba(255,255,255,0.95)',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: 12,
-                        fontSize: 12,
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="baseline"
-                      stroke="#cbd5e1"
-                      strokeDasharray="5 5"
-                      strokeWidth={2}
-                      dot={false}
-                      name="Org avg"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="risk"
-                      stroke="#2563eb"
-                      strokeWidth={3}
-                      dot={{ r: 4, fill: '#2563eb' }}
-                      activeDot={{ r: 6 }}
-                      name="Dept avg"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </Card>
-
           <Card className="lg:col-span-5" hover={false}>
             <CardHeader
               icon="bar_chart"
               title="Risk Distribution"
-              subtitle="By score range"
+              subtitle="Staff burnout score ranges"
             />
             <div className="space-y-2 mt-4">
               {distributionData.map((d) => {
@@ -368,13 +499,84 @@ export default function InsightsPage() {
               <span className="text-primary font-bold">{highRiskCount} at risk</span>
             </div>
           </Card>
+
+          <Card className="lg:col-span-7" hover={false}>
+            <CardHeader
+              icon="balance"
+              title="Fairness Analytics"
+              subtitle="Weekend, night shift, and overtime distribution"
+            />
+            {fairness.stats.length === 0 ? (
+              <div className="text-center py-8 text-on-surface-variant text-sm">No shift data available for fairness analysis.</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                  <div className="p-4 rounded-xl bg-surface-variant/30">
+                    <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Fairness Score</div>
+                    <div className={`font-headline-lg text-headline-lg font-bold mt-1 ${fairness.fairnessScore >= 80 ? 'text-success' : fairness.fairnessScore >= 60 ? 'text-warning' : 'text-error'}`}>
+                      {fairness.fairnessScore}/100
+                    </div>
+                    <ProgressBar value={fairness.fairnessScore} color={fairness.fairnessScore >= 80 ? 'success' : fairness.fairnessScore >= 60 ? 'warning' : 'error'} />
+                  </div>
+                  <div className="p-4 rounded-xl bg-surface-variant/30">
+                    <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Avg Weekend Shifts</div>
+                    <div className="font-headline-lg text-headline-lg font-bold text-on-surface mt-1">{fairness.averages.weekend.toFixed(1)}</div>
+                    <div className="font-label-sm text-label-sm text-on-surface-variant">per employee</div>
+                  </div>
+                  <div className="p-4 rounded-xl bg-surface-variant/30">
+                    <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Avg Night Shifts</div>
+                    <div className="font-headline-lg text-headline-lg font-bold text-on-surface mt-1">{fairness.averages.night.toFixed(1)}</div>
+                    <div className="font-label-sm text-label-sm text-on-surface-variant">per employee</div>
+                  </div>
+                  <div className="p-4 rounded-xl bg-surface-variant/30">
+                    <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Avg Overtime</div>
+                    <div className="font-headline-lg text-headline-lg font-bold text-on-surface mt-1">{fairness.averages.overtime.toFixed(1)}h</div>
+                    <div className="font-label-sm text-label-sm text-on-surface-variant">per employee</div>
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <h4 className="font-label-md text-label-md font-bold text-on-surface mb-3">Distribution by employee</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[500px]">
+                      <thead>
+                        <tr className="text-left border-b border-outline-variant/30">
+                          <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2">Employee</th>
+                          <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2 text-center">Weekend</th>
+                          <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2 text-center">Night</th>
+                          <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2 text-center">Total Hours</th>
+                          <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2 text-center">Overtime</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fairness.stats.slice(0, 10).map((s) => (
+                          <tr key={s.id} className="border-b border-outline-variant/20">
+                            <td className="py-2 font-label-md text-label-md text-on-surface">{s.name}</td>
+                            <td className="py-2 text-center font-label-md text-label-md text-on-surface">{s.weekendShifts}</td>
+                            <td className="py-2 text-center font-label-md text-label-md text-on-surface">{s.nightShifts}</td>
+                            <td className="py-2 text-center font-label-md text-label-md text-on-surface">{s.totalHours}h</td>
+                            <td className="py-2 text-center">
+                              <span className={s.overtime > 10 ? 'text-error font-bold' : s.overtime > 0 ? 'text-warning' : 'text-success'}>
+                                {s.overtime}h
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+          </Card>
         </div>
 
+        {/* Department Health */}
         <Card hover={false}>
           <CardHeader
-            icon="compare"
-            title="Department Health Score"
-            subtitle="Composite of burnout, retention, satisfaction"
+            icon="monitor_heart"
+            title="Department Health"
+            subtitle="Composite of burnout risk and workload balance"
           />
           {deptHealth.length === 0 ? (
             <div className="text-center py-8 text-on-surface-variant text-sm">No departments configured yet.</div>
@@ -399,76 +601,8 @@ export default function InsightsPage() {
             </div>
           )}
         </Card>
-
-        <Card hover={false}>
-          <CardHeader
-            icon="balance"
-            title="Fairness Analytics"
-            subtitle="Weekend, night shift, and overtime distribution across team"
-          />
-          {fairness.stats.length === 0 ? (
-            <div className="text-center py-8 text-on-surface-variant text-sm">No shift data available for fairness analysis.</div>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                <div className="p-4 rounded-xl bg-surface-variant/30">
-                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Fairness Score</div>
-                  <div className={`font-headline-lg text-headline-lg font-bold mt-1 ${fairness.fairnessScore >= 80 ? 'text-success' : fairness.fairnessScore >= 60 ? 'text-warning' : 'text-error'}`}>
-                    {fairness.fairnessScore}/100
-                  </div>
-                  <ProgressBar value={fairness.fairnessScore} color={fairness.fairnessScore >= 80 ? 'success' : fairness.fairnessScore >= 60 ? 'warning' : 'error'} />
-                </div>
-                <div className="p-4 rounded-xl bg-surface-variant/30">
-                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Avg Weekend Shifts</div>
-                  <div className="font-headline-lg text-headline-lg font-bold text-on-surface mt-1">{fairness.averages.weekend.toFixed(1)}</div>
-                  <div className="font-label-sm text-label-sm text-on-surface-variant">per employee</div>
-                </div>
-                <div className="p-4 rounded-xl bg-surface-variant/30">
-                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Avg Night Shifts</div>
-                  <div className="font-headline-lg text-headline-lg font-bold text-on-surface mt-1">{fairness.averages.night.toFixed(1)}</div>
-                  <div className="font-label-sm text-label-sm text-on-surface-variant">per employee</div>
-                </div>
-                <div className="p-4 rounded-xl bg-surface-variant/30">
-                  <div className="font-label-sm text-label-sm text-on-surface-variant uppercase">Avg Overtime</div>
-                  <div className="font-headline-lg text-headline-lg font-bold text-on-surface mt-1">{fairness.averages.overtime.toFixed(1)}h</div>
-                  <div className="font-label-sm text-label-sm text-on-surface-variant">per employee</div>
-                </div>
-              </div>
-
-              <div className="mt-6">
-                <h4 className="font-label-md text-label-md font-bold text-on-surface mb-3">Distribution by employee</h4>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[500px]">
-                    <thead>
-                      <tr className="text-left border-b border-outline-variant/30">
-                        <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2">Employee</th>
-                        <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2 text-center">Weekend</th>
-                        <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2 text-center">Night</th>
-                        <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2 text-center">Total Hours</th>
-                        <th className="font-label-sm text-label-sm text-on-surface-variant uppercase py-2 text-center">Overtime</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {fairness.stats.slice(0, 10).map((s) => (
-                        <tr key={s.id} className="border-b border-outline-variant/20">
-                          <td className="py-2 font-label-md text-label-md text-on-surface">{s.name}</td>
-                          <td className="py-2 text-center font-label-md text-label-md text-on-surface">{s.weekendShifts}</td>
-                          <td className="py-2 text-center font-label-md text-label-md text-on-surface">{s.nightShifts}</td>
-                          <td className="py-2 text-center font-label-md text-label-md text-on-surface">{s.totalHours}h</td>
-                          <td className="py-2 text-center">
-                            <span className={s.overtime > 10 ? 'text-error font-bold' : s.overtime > 0 ? 'text-warning' : 'text-success'}>
-                              {s.overtime}h
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-        </Card>
+        </>
+        )}
       </section>
 
       <Modal open={diagOpen} onClose={() => { setDiagOpen(false); setDiagDept(null) }} title="AI Burnout Diagnostic" size="lg">
@@ -499,6 +633,7 @@ function KpiCard({ label, value, delta, deltaColor, trend, icon }) {
 
 function DiagnosticContent({ dept, burnout, employees, deptBurnout }) {
   const toast = useToast()
+  const navigate = useNavigate()
   const activeDept = dept || (deptBurnout.length ? deptBurnout[0].dept : 'Unknown')
 
   const deptScores = useMemo(() => {
@@ -552,10 +687,10 @@ function DiagnosticContent({ dept, burnout, employees, deptBurnout }) {
         <h4 className="font-label-md text-label-md font-bold text-on-surface mb-sm">AI recommended interventions</h4>
         <div className="space-y-sm">
           {[
-            { action: 'Approve pending PTO requests', impact: 'High', icon: 'beach_access' },
-            { action: 'Distribute high-acuity shifts to other teams', impact: 'Med', icon: 'shuffle' },
-            { action: 'Schedule 1:1 check-ins with all staff scoring 70+', impact: 'High', icon: 'forum' },
-            { action: 'Authorize float nurse coverage', impact: 'Med', icon: 'person_add' },
+            { action: 'Approve pending PTO requests', impact: 'High', icon: 'beach_access', route: '/app/leaves', message: 'Navigating to absence requests...' },
+            { action: 'Distribute high-acuity shifts to other teams', impact: 'Med', icon: 'shuffle', route: '/app/marketplace', message: 'Opening shift marketplace...' },
+            { action: 'Schedule 1:1 check-ins with all staff scoring 70+', impact: 'High', icon: 'forum', route: '/app/employees', message: 'Opening employee list...' },
+            { action: 'Authorize float-pool coverage', impact: 'Med', icon: 'person_add', route: '/app/dashboard', message: 'Opening dashboard to create shifts...' },
           ].map((rec, i) => (
             <div key={i} className="flex items-start gap-md p-md rounded-xl border border-outline-variant/30 hover:border-primary/40 transition-colors">
               <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
@@ -568,7 +703,10 @@ function DiagnosticContent({ dept, burnout, employees, deptBurnout }) {
                 </Badge>
               </div>
               <button
-                onClick={() => toast.push(`Intervention queued: ${rec.action}`, { tone: 'success' })}
+                onClick={() => {
+                  toast.push(rec.message, { tone: 'info' })
+                  navigate(rec.route)
+                }}
                 className="btn-primary py-xs px-sm text-xs"
               >
                 Apply

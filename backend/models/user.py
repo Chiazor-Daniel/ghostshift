@@ -4,7 +4,7 @@ User Model - Employee and Admin
 
 from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, Enum, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from config.database import Base
 import enum
 
@@ -37,7 +37,7 @@ class User(Base):
     phone = Column(String(50))
     avatar_url = Column(String(500))
     cover_color = Column(String(20))
-    hired_at = Column(DateTime)
+    hired_at = Column(DateTime(timezone=True))
     certifications = Column(JSON, default=list)
     cert_expiry = Column(JSON, default=dict)
     weekly_hours_target = Column(Integer, default=36)
@@ -47,9 +47,9 @@ class User(Base):
     burnout_trend = Column(String(10), default="stable")
     rating = Column(Integer, default=4)
     status = Column(String(20), default="active", nullable=False)
-    last_active = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_active = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     organization = relationship("Organization", back_populates="users")

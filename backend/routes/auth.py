@@ -2,7 +2,7 @@
 import logging
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -14,6 +14,7 @@ from config.database import SessionLocal, get_db
 from middleware.auth import (
     create_access_token,
     create_refresh_token,
+    create_password_reset_token,
     verify_token,
     hash_password,
     verify_password,
@@ -21,6 +22,7 @@ from middleware.auth import (
 from models.user import User
 from models.organization import Organization
 from models.invite import Invite
+from utils.email import email_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -31,7 +33,7 @@ router = APIRouter()
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=4)
+    password: str = Field(min_length=8)
     name: str = Field(min_length=1)
     role: Optional[str] = "employee"
 
@@ -53,6 +55,11 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8)
+
+
 class OnboardRequest(BaseModel):
     """Sign up + create org + create admin in one shot."""
     org_name: str = Field(..., min_length=1)
@@ -63,7 +70,7 @@ class OnboardRequest(BaseModel):
     currency: Optional[str] = "USD"
     admin_name: str = Field(..., min_length=1)
     admin_email: EmailStr
-    admin_password: str = Field(..., min_length=4)
+    admin_password: str = Field(..., min_length=8)
     departments: Optional[list] = []
     location: Optional[str] = None
 
@@ -83,7 +90,7 @@ def _initials(name: str) -> str:
 
 
 def _make_id(prefix: str) -> str:
-    return f"{prefix}_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(4)}"
+    return f"{prefix}_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}"
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────
@@ -119,9 +126,9 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
         password_hash=hash_password(request.password),
         name=request.name,
         initials=_initials(request.name),
-        role=request.role or "employee",
+        role="employee",
         department="General",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(user)
     db.commit()
@@ -179,10 +186,31 @@ async def onboard(request: OnboardRequest, db: Session = Depends(get_db)):
             "week_starts_on": "monday",
         },
         is_active=True,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(org)
     db.flush()
+
+    # Create department records BEFORE creating admin user
+    from models.organization import Department
+    created_depts = []
+    for dept_name in (request.departments or []):
+        if not dept_name or not dept_name.strip():
+            continue
+        dept = Department(
+            id=_make_id("dept"),
+            org_id=org.id,
+            name=dept_name.strip(),
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(dept)
+        created_depts.append(dept)
+    if created_depts:
+        db.flush()  # Flush to get department IDs
+
+    # Determine admin's department (use first created dept if available, else "Administration")
+    admin_dept_name = request.departments[0] if request.departments else "Administration"
+    admin_dept_id = created_depts[0].id if created_depts else None
 
     admin = User(
         id=_make_id("user"),
@@ -193,10 +221,11 @@ async def onboard(request: OnboardRequest, db: Session = Depends(get_db)):
         initials=_initials(request.admin_name),
         role="admin",
         title="Administrator",
-        department=(request.departments[0] if request.departments else "Administration"),
+        department=admin_dept_name,
+        department_id=admin_dept_id,
         avatar_url=f"https://ui-avatars.com/api/?name={request.admin_name.replace(' ', '+')}&background=6366f1&color=fff&size=120",
         cover_color="#6366f1",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(admin)
     db.commit()
@@ -272,6 +301,11 @@ async def login_form(form_data: OAuth2PasswordRequestForm = Depends(), db: Sessi
 async def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     """Issue a new access token using a valid refresh token."""
     payload = verify_token(request.refresh_token)
+    if payload.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type",
+        )
     user_id = payload.get("user_id")
     org_id = payload.get("org_id")
     if not user_id:
@@ -304,26 +338,31 @@ class ForgotPasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     token: str
-    new_password: str = Field(min_length=4)
+    new_password: str = Field(min_length=8)
 
 
 @router.post("/forgot-password")
 async def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
     """Always returns the same message to avoid leaking which emails exist."""
     user = db.query(User).filter(User.email == request.email.lower()).first()
+    dev_token = None
     if user:
-        reset_token = create_access_token(
-            {"user_id": user.id, "action": "reset_password"},
-            expires_delta=timedelta(hours=1),
-        )
+        reset_token = create_password_reset_token({"user_id": user.id})
+        dev_token = reset_token
         logger.info(f"[DEV ONLY] Reset link for {user.email}: /reset-password?token={reset_token}")
-    return {"message": "If the email exists, a reset link has been sent."}
+        
+        import os
+        frontend_url = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")[0]
+        reset_url = f"{frontend_url}/forgot-password?token={reset_token}"
+        await email_service.send_password_reset(to=user.email, reset_url=reset_url)
+        
+    return {"message": "If the email exists, a reset link has been sent.", "dev_token": dev_token}
 
 
 @router.post("/reset-password")
 async def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
     payload = verify_token(request.token)
-    if payload.get("action") != "reset_password":
+    if payload.get("type") != "password_reset":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token")
     user = db.query(User).filter(User.id == payload["user_id"]).first()
     if not user:
@@ -331,6 +370,18 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
     user.password_hash = hash_password(request.new_password)
     db.commit()
     return {"message": "Password reset successful"}
+
+
+@router.post("/change-password")
+async def change_password(request: Request, payload: ChangePasswordRequest, db: Session = Depends(get_db)):
+    """Allow any authenticated user to change their own password."""
+    from middleware.auth import get_current_user
+    user = await get_current_user(request, db)
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"message": "Password updated successfully"}
 
 
 @router.get("/me")

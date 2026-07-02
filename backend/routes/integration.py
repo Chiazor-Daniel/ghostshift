@@ -1,7 +1,7 @@
 """Integration routes — AI assistant (tool-using agent), Slack, Google calendar."""
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -51,7 +51,7 @@ class ScheduleOptimizationRequest(BaseModel):
 
 
 def _new_turn_id() -> str:
-    return f"ct_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(4)}"
+    return f"ct_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}"
 
 
 def _persist_turn(db: Session, *, turn_id, org_id, user_id, session_id,
@@ -66,7 +66,7 @@ def _persist_turn(db: Session, *, turn_id, org_id, user_id, session_id,
         tool_name=tool_name,
         tool_args=tool_args,
         tool_result=tool_result,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(t)
     return t

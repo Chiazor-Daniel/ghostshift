@@ -3,14 +3,14 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { realAPI } from '../services/realAPI.js'
 import { useUser } from '../layout/AppShell.jsx'
 
-const SUGGESTIONS = [
-  'How many open shifts are there?',
-  "What's my burnout risk?",
-  'Show me pending swap requests',
-  'Who is working with me today?',
-  'Draft a swap request for my next shift',
-  'Explain how AI matching works',
-]
+  const SUGGESTIONS = [
+    'How many open shifts are there?',
+    "What's my burnout risk?",
+    'Show me pending swap requests',
+    'Who is working with me today?',
+    'How do I invite a new employee?',
+    'Explain how AI matching works',
+  ]
 
 const STORE_KEY = 'gs_chat_session_id'
 
@@ -55,7 +55,7 @@ export default function ChatAssistant() {
   const userId = user?.id
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState([
-    { role: 'assistant', text: "Hi! I'm **Shift**, your AI scheduling assistant. I have access to your live shifts, swaps, leaves, and burnout data — ask me anything, or pick a suggestion below to get started." },
+    { role: 'assistant', text: "Hi! I'm **Shift**, your AI scheduling assistant. Ask me about your schedule, open shifts, swaps, leave requests, or team data. I can also point you to the right page in the dashboard." },
   ])
   const [input, setInput] = useState('')
   const [typing, setTyping] = useState(false)
@@ -81,6 +81,13 @@ export default function ChatAssistant() {
       .catch(() => {}) // ignore — fresh conversation will work anyway
       .finally(() => setHistoryLoaded(true))
   }, [open, historyLoaded])
+
+  // Listen for sidebar button to open chat
+  useEffect(() => {
+    const handleOpenChat = () => setOpen(true)
+    window.addEventListener('open-chat-assistant', handleOpenChat)
+    return () => window.removeEventListener('open-chat-assistant', handleOpenChat)
+  }, [])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -118,18 +125,29 @@ export default function ChatAssistant() {
   function startNewConversation() {
     realAPI.newChatSession()
     setMessages([
-      { role: 'assistant', text: "New conversation started. What would you like to know?" },
+      { role: 'assistant', text: "New conversation started. Ask me about your schedule, swaps, leaves, or where to find something in GhostShift." },
     ])
     setHistoryLoaded(true)
   }
 
+  function sanitizeText(text) {
+    if (!text) return ''
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  }
+
   function renderText(text) {
-    return text.split('\n').map((line, i) => (
+    const safe = sanitizeText(text)
+    return safe.split('\n').map((line, i) => (
       <span key={i}>
         {line.split(/\*\*(.*?)\*\*/g).map((part, j) =>
           j % 2 === 1 ? <strong key={j} className="font-bold text-on-surface">{part}</strong> : part
         )}
-        {i < text.split('\n').length - 1 && <br />}
+        {i < safe.split('\n').length - 1 && <br />}
       </span>
     ))
   }

@@ -6,7 +6,7 @@ import { realAPI } from '../services/realAPI.js'
 
 const sections = [
   { id: 'org', label: 'Organization', icon: 'corporate_fare' },
-  { id: 'integrations', label: 'Integrations', icon: 'cable' },
+  { id: 'profile', label: 'Profile & Password', icon: 'person' },
   { id: 'policies', label: 'Policies', icon: 'gavel' },
   { id: 'audit', label: 'Audit Log', icon: 'history' },
 ]
@@ -45,8 +45,13 @@ export default function AdminPage() {
           </aside>
 
           <div className="lg:col-span-9 space-y-4">
-            {activeSection === 'org' && <OrgSection />}
-            {activeSection === 'integrations' && <IntegrationsSection />}
+            {activeSection === 'org' && (
+              <>
+                <NoShowAlertsWidget />
+                <OrgSection />
+              </>
+            )}
+            {activeSection === 'profile' && <ProfilePasswordSection />}
             {activeSection === 'policies' && <PoliciesSection />}
             {activeSection === 'audit' && <AuditSection />}
           </div>
@@ -72,6 +77,7 @@ function OrgSection() {
   const [employees, setEmployees] = useState([])
   const [newDept, setNewDept] = useState('')
   const [saving, setSaving] = useState(false)
+  const [addingDept, setAddingDept] = useState(false)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -95,7 +101,6 @@ function OrgSection() {
       setLoading(false)
     }
   }
-
   async function saveField(key, value) {
     setSaving(true)
     try {
@@ -116,7 +121,9 @@ function OrgSection() {
   }
 
   async function addDept() {
+    if (addingDept) return
     if (!newDept.trim()) return
+    setAddingDept(true)
     try {
       await realAPI.createDepartment({ name: newDept.trim() })
       setNewDept('')
@@ -125,6 +132,8 @@ function OrgSection() {
       toast.push('Department added', { tone: 'success' })
     } catch (err) {
       toast.push(err.message || 'Could not add department', { tone: 'error' })
+    } finally {
+      setAddingDept(false)
     }
   }
 
@@ -139,7 +148,7 @@ function OrgSection() {
     <>
       <SectionHeader
         title="Organization"
-        description="Manage your hospital, departments, and high-level configuration"
+        description="Manage your organization, departments, and high-level configuration"
       />
       <Card hover={false}>
         <div className="space-y-md">
@@ -150,7 +159,7 @@ function OrgSection() {
             <div className="flex-1">
               <h3 className="font-headline-md text-lg font-bold text-on-surface">{displayName}</h3>
               <p className="font-body-sm text-body-sm text-on-surface-variant">
-                {employees.length} employees · {depts.length} departments · {org.timezone || 'UTC'}
+                {employees.filter((e) => e.role !== 'admin').length} employees · {depts.length} departments · {org.timezone || 'UTC'}
               </p>
             </div>
             <span className="chip bg-primary/10 text-primary">Active</span>
@@ -182,18 +191,19 @@ function OrgSection() {
               onKeyDown={(e) => { if (e.key === 'Enter') addDept() }}
               placeholder="New department name…"
               className="input-base flex-1"
+              disabled={addingDept}
             />
-            <button onClick={addDept} className="btn-primary">
-              <span className="material-symbols-outlined text-[18px]">add</span>
-              Add
+            <button onClick={addDept} disabled={addingDept} className="btn-primary disabled:opacity-60">
+              <span className="material-symbols-outlined text-[18px]">{addingDept ? 'progress_activity' : 'add'}</span>
+              {addingDept ? 'Adding…' : 'Add'}
             </button>
           </div>
           {depts.length === 0 ? (
-            <EmptyState icon="corporate_fare" title="No departments yet" description="Add the departments your hospital uses." />
+            <EmptyState icon="corporate_fare" title="No departments yet" description="Add the departments your team operates in." />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-sm">
               {depts.map((d) => {
-                const count = employees.filter((e) => e.department === d.name).length
+                const count = employees.filter((e) => e.role !== 'admin' && e.department === d.name).length
                 return (
                   <div
                     key={d.id}
@@ -219,64 +229,62 @@ function OrgSection() {
   )
 }
 
-function IntegrationsSection() {
+function ProfilePasswordSection() {
   const toast = useToast()
-  const [status, setStatus] = useState({})
+  const [current, setCurrent] = useState('')
+  const [newPass, setNewPass] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    realAPI.integrationsStatus()
-      .then(setStatus)
-      .catch(() => setStatus({}))
-  }, [])
-
-  const integrations = [
-    { key: 'workday', name: 'Workday', desc: 'HRIS sync · Employee records & payroll', icon: 'work', category: 'HRIS' },
-    { key: 'entra', name: 'Microsoft Entra SSO', desc: 'Single sign-on · Provisioning via SCIM', icon: 'shield', category: 'Identity' },
-    { key: 'slack', name: 'Slack', desc: 'Notifications · Swap alerts in channels', icon: 'forum', category: 'Comms' },
-    { key: 'epic', name: 'Epic', desc: 'EHR · Patient acuity scoring', icon: 'medical_services', category: 'EHR' },
-    { key: 'gcal', name: 'Google Calendar', desc: 'Bi-directional shift sync', icon: 'event', category: 'Calendar' },
-    { key: 'adp', name: 'ADP', desc: 'Payroll · Premium shift pay export', icon: 'payments', category: 'Payroll' },
-  ]
+  async function submit(e) {
+    e.preventDefault()
+    if (newPass.length < 8) {
+      toast.push('New password must be at least 8 characters', { tone: 'warning' })
+      return
+    }
+    if (newPass !== confirm) {
+      toast.push('Passwords do not match', { tone: 'warning' })
+      return
+    }
+    setBusy(true)
+    try {
+      await realAPI.changePassword(current, newPass)
+      setCurrent('')
+      setNewPass('')
+      setConfirm('')
+      toast.push('Password updated', { tone: 'success' })
+    } catch (err) {
+      toast.push(err.message || 'Could not update password', { tone: 'error' })
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <>
       <SectionHeader
-        title="Integrations"
-        description="Connect GhostShift to your existing systems. When a real customer onboards, each integration uses OAuth2 or API keys configured during setup."
+        title="Profile & password"
+        description="Update your account password"
       />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {integrations.map((i) => {
-          const live = status?.[i.key] || status?.integrations?.[i.key]
-          const connected = live?.connected ?? false
-          return (
-            <Card key={i.name} hover>
-              <div className="flex items-start gap-md">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${connected ? 'bg-primary/10 text-primary' : 'bg-surface-variant text-on-surface-variant'}`}>
-                  <span className="material-symbols-outlined text-[24px]">{i.icon}</span>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-sm">
-                    <h3 className="font-headline-md text-base font-bold text-on-surface">{i.name}</h3>
-                    <Badge variant={connected ? 'success' : 'neutral'}>
-                      {connected ? 'Connected' : 'Available'}
-                    </Badge>
-                  </div>
-                  <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">{i.desc}</p>
-                  <div className="mt-md flex items-center justify-between">
-                    <Badge variant="info">{i.category}</Badge>
-                    <button
-                      onClick={() => toast.push(connected ? 'Disconnect integration flow coming soon' : 'Connect flow opens during onboarding', { tone: 'info' })}
-                      className={`py-xs px-sm text-xs ${connected ? 'btn-ghost text-error hover:bg-error/10' : 'btn-primary'}`}
-                    >
-                      {connected ? 'Disconnect' : 'Connect'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          )
-        })}
-      </div>
+      <Card hover={false}>
+        <form onSubmit={submit} className="space-y-md max-w-md">
+          <div>
+            <label className="font-label-sm text-label-sm text-on-surface-variant">Current password</label>
+            <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} className="input-base w-full mt-xs" required />
+          </div>
+          <div>
+            <label className="font-label-sm text-label-sm text-on-surface-variant">New password</label>
+            <input type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} className="input-base w-full mt-xs" required minLength={8} />
+          </div>
+          <div>
+            <label className="font-label-sm text-label-sm text-on-surface-variant">Confirm new password</label>
+            <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="input-base w-full mt-xs" required minLength={8} />
+          </div>
+          <button type="submit" disabled={busy} className="btn-primary disabled:opacity-60">
+            {busy ? 'Updating…' : 'Update password'}
+          </button>
+        </form>
+      </Card>
     </>
   )
 }
@@ -288,7 +296,6 @@ function PoliciesSection() {
     minRestGap: 10,
     maxWeeklyHours: 60,
     swapApprovalWindow: 24,
-    premiumPayThreshold: 25,
   })
 
   function save(key, value) {
@@ -329,13 +336,7 @@ function PoliciesSection() {
             desc="Hours before shift when manager approval is required"
             onChange={(v) => save('swapApprovalWindow', Number(v))}
           />
-          <Policy
-            title="Premium pay threshold"
-            value={policies.premiumPayThreshold}
-            suffix="%"
-            desc="Minimum premium for filling last-minute open shifts"
-            onChange={(v) => save('premiumPayThreshold', Number(v))}
-          />
+
         </div>
       </Card>
 
@@ -471,6 +472,129 @@ function AuditSection() {
         </div>
       </Card>
     </>
+  )
+}
+
+function NoShowAlertsWidget() {
+  const toast = useToast()
+  const [alerts, setAlerts] = useState([])
+  const [employees, setEmployees] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [nudgeBusyId, setNudgeBusyId] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      try {
+        const [a, emps] = await Promise.all([
+          realAPI.getNoShowAlerts().catch(() => []),
+          realAPI.getEmployees().catch(() => []),
+        ])
+        if (cancelled) return
+        setAlerts(a || [])
+        setEmployees(emps || [])
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    // Refresh every 60s so the widget stays current
+    const id = setInterval(load, 60_000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
+
+  async function nudge(alert) {
+    if (nudgeBusyId) return
+    setNudgeBusyId(alert.id)
+    try {
+      const emp = employees.find((e) => e.id === (alert.employee_id || (alert.assigned_staff || [])[0]))
+      await realAPI.sendNotification({
+        user_id: emp?.id,
+        title: 'No-show alert',
+        body: `You haven't checked in to "${alert.title || 'shift'}" starting at ${alert.start_time ? new Date(alert.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'scheduled time'}. Please check in or contact your manager.`,
+        type: 'no_show',
+      })
+      toast.push('Nudge sent — assigned employee will get a push notification', { tone: 'success' })
+    } catch (err) {
+      toast.push(err.message || 'Failed to send nudge', { tone: 'error' })
+    } finally {
+      setNudgeBusyId(null)
+    }
+  }
+
+  if (loading && alerts.length === 0) return null
+
+  if (alerts.length === 0) {
+    return (
+      <Card hover={false}>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-success/15 text-success flex items-center justify-center flex-shrink-0">
+            <span className="material-symbols-outlined text-[20px]">check_circle</span>
+          </div>
+          <div>
+            <h3 className="font-headline-sm text-headline-sm font-bold text-on-surface">No-show alerts: 0</h3>
+            <p className="font-body-sm text-body-sm text-on-surface-variant">
+              Every assigned shift is checked in. Last scanned just now.
+            </p>
+          </div>
+        </div>
+      </Card>
+    )
+  }
+
+  const top = alerts.slice(0, 3)
+  return (
+    <Card hover={false} className="border-2 border-warning/30 bg-warning/5">
+      <div className="flex items-start justify-between mb-md gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-warning/20 text-warning flex items-center justify-center flex-shrink-0">
+            <span className="material-symbols-outlined text-[20px]">notification_important</span>
+          </div>
+          <div>
+            <h3 className="font-headline-sm text-headline-sm font-bold text-on-surface">
+              No-show alerts: <span className="text-warning">{alerts.length}</span>
+            </h3>
+            <p className="font-body-sm text-body-sm text-on-surface-variant">
+              Shifts that started 15+ min ago with no check-in from the assigned employee.
+            </p>
+          </div>
+        </div>
+        {alerts.length > 3 && (
+          <Badge variant="warning">+{alerts.length - 3} more</Badge>
+        )}
+      </div>
+      <div className="space-y-2">
+        {top.map((a) => {
+          const emp = employees.find((e) => e.id === (a.employee_id || (a.assigned_staff || [])[0]))
+          const late = a.minutes_late != null ? a.minutes_late : null
+          return (
+            <div key={a.id} className="flex items-center gap-3 p-3 rounded-lg bg-surface">
+              <div className="w-9 h-9 rounded-full bg-warning/15 text-warning flex items-center justify-center font-bold text-sm flex-shrink-0">
+                {emp ? (emp.name || '?').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() : '?'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-label-md text-label-md font-bold text-on-surface truncate">
+                  {a.title || a.role || 'Shift'}
+                </div>
+                <div className="font-label-sm text-label-sm text-on-surface-variant truncate">
+                  {a.department || '—'} · {emp?.name || 'No one assigned'}
+                  {late != null && <span className="ml-1 text-warning">· {late} min late</span>}
+                </div>
+              </div>
+              <button
+                onClick={() => nudge(a)}
+                disabled={nudgeBusyId === a.id}
+                className="btn-primary text-xs py-1.5 px-3 disabled:opacity-60"
+              >
+                <span className="material-symbols-outlined text-[14px]">notifications_active</span>
+                {nudgeBusyId === a.id ? 'Sending…' : 'Nudge'}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
   )
 }
 

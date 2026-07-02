@@ -1,17 +1,25 @@
-"""Invite routes — production ready with auto-accept (per product spec)."""
+"""Invite routes — link-based invitation flow.
+
+An invite creates a pending token. The recipient opens the link, sets their own
+password, and only then becomes an active user in the org. No email integration
+is required; admins copy the link and share it through their own channel.
+"""
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, HTTPException, Request, status, Depends
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import Optional
 
 from config.database import get_db
-from middleware.auth import get_current_user, hash_password
+from middleware.auth import get_current_user, hash_password, verify_password
 from models.invite import Invite
 from models.user import User
+from models.organization import Organization
+from utils.email import email_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -19,10 +27,9 @@ router = APIRouter()
 
 class InviteCreate(BaseModel):
     email: EmailStr
-    name: Optional[str] = None
+    name: str = Field(..., min_length=1)
     department: Optional[str] = None
     role: Optional[str] = "employee"
-    password: Optional[str] = None  # auto-generated default password for instant access
 
 
 def _initials(name: str) -> str:
@@ -35,11 +42,11 @@ def _initials(name: str) -> str:
 
 
 def _iid() -> str:
-    return f"inv_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(4)}"
+    return f"inv_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}"
 
 
 def _uid() -> str:
-    return f"user_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(4)}"
+    return f"user_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}"
 
 
 def _serialize_invite(i: Invite) -> dict:
@@ -72,63 +79,56 @@ async def list_invites(request: Request, status_filter: Optional[str] = None,
 @router.post("/")
 async def create_invite(request: Request, payload: dict, db: Session = Depends(get_db)):
     """
-    Create an invite and AUTO-ACCEPT it (per product spec).
+    Create a pending invite for a new employee.
 
-    - Invited user record is provisioned immediately with role + temp password
-    - Token is returned for optional email/UI use
-    - Frontend can also call this and show the user is already in the team
+    - No user account is created until the recipient opens the link and sets a password.
+    - Returns a full invite URL the admin can copy and share manually.
     """
     user = await get_current_user(request, db)
 
     email = (payload.get("email") or "").lower().strip()
+    name = (payload.get("name") or "").strip()
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
 
-    # Block duplicates
-    existing_user = db.query(User).filter(User.email == email).first()
-    if existing_user and existing_user.org_id == user.org_id:
-        # If the user already exists in this org, return them as the "invited" entry
-        return {
-            "invite": {
-                "id": f"existing-{existing_user.id}",
-                "email": existing_user.email,
-                "name": existing_user.name,
-                "department": existing_user.department,
-                "role": existing_user.role,
-                "status": "already_member",
-                "token": None,
-                "expires_at": None,
-                "accepted_at": None,
-            },
-            "invite_url": None,
-            "created_user": {
-                "id": existing_user.id, "email": existing_user.email,
-                "name": existing_user.name, "role": existing_user.role,
-            },
-            "auto_accepted": True,
-        }
+    # Block duplicates — case-insensitive email match within the org
+    existing_user = db.query(User).filter(
+        User.org_id == user.org_id,
+        func.lower(User.email) == email.lower()
+    ).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{existing_user.name or email} is already a member of this organization.",
+        )
 
-    # Default password is auto-generated; admin can override
-    plain_password = payload.get("password") or secrets.token_urlsafe(8)
+    # Block duplicate names (case-insensitive) within the org to prevent confusion
+    existing_name = db.query(User).filter(
+        User.org_id == user.org_id,
+        func.lower(User.name) == name.lower()
+    ).first()
+    if existing_name:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A member named {existing_name.name} already exists in this organization. Please use a different name.",
+        )
+
+    # Block duplicate pending invites for the same email in this org
+    existing_pending = db.query(Invite).filter(
+        Invite.org_id == user.org_id,
+        func.lower(Invite.email) == email.lower(),
+        Invite.status == "pending",
+    ).first()
+    if existing_pending:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A pending invite for {email} already exists.",
+        )
+
     role = (payload.get("role") or "employee").lower()
-    name = (payload.get("name") or email.split("@")[0]).strip()
-
-    new_user = User(
-        id=_uid(),
-        org_id=user.org_id,
-        email=email,
-        password_hash=hash_password(plain_password),
-        name=name,
-        initials=_initials(name),
-        role=role,
-        title="Administrator" if role == "admin" else "Staff",
-        department=payload.get("department") or "Unassigned",
-        avatar_url=f"https://ui-avatars.com/api/?name={name.replace(' ', '+')}&background=6366f1&color=fff&size=120",
-        cover_color="#6366f1",
-        created_at=datetime.utcnow(),
-    )
-    db.add(new_user)
-    db.flush()
+    department = payload.get("department") or "Unassigned"
 
     token = secrets.token_urlsafe(32)
     invite = Invite(
@@ -137,32 +137,66 @@ async def create_invite(request: Request, payload: dict, db: Session = Depends(g
         invited_by_id=user.id,
         email=email,
         name=name,
-        department=payload.get("department"),
+        department=department,
         role=role,
-        status="accepted",  # auto-accepted per product spec
+        status="pending",
         token=token,
-        expires_at=datetime.utcnow() + timedelta(days=7),
-        accepted_at=datetime.utcnow(),
-        password_hash=hash_password(plain_password),
-        created_at=datetime.utcnow(),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(invite)
     db.commit()
     db.refresh(invite)
-    db.refresh(new_user)
 
-    invite_url = f"/accept-invite/{token}"
+    import os
+    frontend_url = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")[0]
+    full_invite_url = f"{frontend_url}/accept-invite/{token}"
+    invite_path = f"/accept-invite/{token}"
+    
+    try:
+        org = db.query(Organization).filter(Organization.id == user.org_id).first()
+        org_name = org.name if org else "GhostShift"
+        
+        await email_service.send_invitation(
+            to=email,
+            inviter_name=user.name,
+            org_name=org_name,
+            role=role,
+            invite_url=full_invite_url
+        )
+    except Exception as e:
+        logger.error(f"Failed to send invite email to {email}: {e}")
+
     return {
         "invite": _serialize_invite(invite),
-        "invite_url": invite_url,
+        "invite_url": invite_path,
         "invite_token": token,
-        "created_user": {
-            "id": new_user.id, "email": new_user.email,
-            "name": new_user.name, "role": new_user.role,
-            "department": new_user.department,
-            "temp_password": plain_password if not payload.get("password") else None,
-        },
-        "auto_accepted": True,
+    }
+
+@router.get("/preview/{token}")
+async def preview_invite(token: str, db: Session = Depends(get_db)):
+    """
+    Public endpoint — the token IS the auth.
+
+    Returns the org name, role, department, and email for the pending invite.
+    If the invite has already been accepted, the user should sign in instead.
+    """
+    invite = db.query(Invite).filter(Invite.token == token).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite link is invalid or has been revoked.")
+    if invite.status == "revoked":
+        raise HTTPException(status_code=410, detail="This invite has been revoked by your admin.")
+    if invite.status == "accepted":
+        raise HTTPException(status_code=410, detail="This invite has already been used. Please sign in instead.")
+    if invite.expires_at and invite.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="This invite link has expired.")
+
+    from models.organization import Organization
+    org = db.query(Organization).filter(Organization.id == invite.org_id).first()
+
+    return {
+        "invite": _serialize_invite(invite),
+        "organization": {"id": org.id, "name": org.name} if org else None,
     }
 
 
@@ -186,23 +220,89 @@ async def revoke_invite(request: Request, invite_id: str, db: Session = Depends(
     if not invite:
         raise HTTPException(status_code=404, detail="Invite not found")
     invite.status = "revoked"
-    invite.updated_at = datetime.utcnow()
+    invite.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(invite)
     return _serialize_invite(invite)
 
 
+
+
+
+class AcceptInvitePayload(BaseModel):
+    token: str
+    password: str = Field(..., min_length=8)
+
+
 @router.post("/accept")
-async def accept_invite(request: Request, token: str, db: Session = Depends(get_db)):
-    """Manual accept path — kept for completeness; our default flow auto-accepts."""
-    user = await get_current_user(request, db)
-    invite = db.query(Invite).filter(
-        Invite.token == token, Invite.org_id == user.org_id
-    ).first()
+async def accept_invite(payload: AcceptInvitePayload, db: Session = Depends(get_db)):
+    """
+    Public endpoint — create the user account and activate the invite.
+
+    The recipient opens the invite link, sets their own password, and only then
+    becomes an active member of the organization.
+    """
+    token = (payload.token or "").strip()
+    password = payload.password
+    if not token:
+        raise HTTPException(status_code=400, detail="Missing invite token")
+    if not password or len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    invite = db.query(Invite).filter(Invite.token == token).first()
     if not invite:
         raise HTTPException(status_code=404, detail="Invalid or expired invite")
+    if invite.status == "revoked":
+        raise HTTPException(status_code=410, detail="This invite has been revoked by your admin.")
+    if invite.status == "accepted":
+        raise HTTPException(status_code=410, detail="This invite has already been used. Please sign in instead.")
+    if invite.expires_at and invite.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="This invite link has expired.")
+
+    # Block duplicate user just in case
+    existing_user = db.query(User).filter(
+        User.org_id == invite.org_id,
+        func.lower(User.email) == invite.email.lower(),
+    ).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{invite.email} is already a member. Please sign in instead.",
+        )
+
+    new_user = User(
+        id=_uid(),
+        org_id=invite.org_id,
+        email=invite.email,
+        password_hash=hash_password(password),
+        name=invite.name,
+        initials=_initials(invite.name),
+        role=invite.role,
+        title="Administrator" if invite.role == "admin" else "Staff",
+        department=invite.department or "Unassigned",
+        avatar_url=f"https://ui-avatars.com/api/?name={invite.name.replace(' ', '+')}&background=6366f1&color=fff&size=120",
+        cover_color="#6366f1",
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(new_user)
+
     invite.status = "accepted"
-    invite.accepted_at = datetime.utcnow()
-    invite.updated_at = datetime.utcnow()
+    invite.accepted_at = datetime.now(timezone.utc)
+    invite.updated_at = datetime.now(timezone.utc)
+
     db.commit()
-    return {"message": "Invite accepted", "invite": _serialize_invite(invite)}
+    db.refresh(new_user)
+    db.refresh(invite)
+
+    return {
+        "message": "Invite accepted. You can now sign in.",
+        "invite": _serialize_invite(invite),
+        "user": {
+            "id": new_user.id,
+            "email": new_user.email,
+            "name": new_user.name,
+            "role": new_user.role,
+            "department": new_user.department,
+        },
+    }

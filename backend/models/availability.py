@@ -4,7 +4,7 @@ Availability Model - Employee availability preferences
 
 from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Enum
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from config.database import Base
 import enum
 
@@ -26,11 +26,11 @@ class Availability(Base):
     end_time = Column(String(10))
     status = Column(Enum(AvailabilityStatus), default=AvailabilityStatus.AVAILABLE)
     is_recurring = Column(Boolean, default=True)
-    start_date = Column(DateTime)
-    end_date = Column(DateTime)
+    start_date = Column(DateTime(timezone=True))
+    end_date = Column(DateTime(timezone=True))
     notes = Column(String(500))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     organization = relationship("Organization")

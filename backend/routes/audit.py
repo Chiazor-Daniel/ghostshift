@@ -1,7 +1,7 @@
 """Audit log routes — production ready."""
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, Depends
@@ -32,7 +32,7 @@ def _serialize(a: AuditLog) -> dict:
 
 
 def _aid() -> str:
-    return f"a_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(4)}"
+    return f"a_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}"
 
 
 @router.get("/")
@@ -62,7 +62,7 @@ async def create_audit(request: Request, payload: dict, db: Session = Depends(ge
         new_values=payload.get("new_values") or {},
         ip_address=payload.get("ip_address"),
         user_agent=payload.get("user_agent"),
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(entry)
     db.commit()

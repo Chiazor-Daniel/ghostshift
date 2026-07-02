@@ -60,8 +60,6 @@ class EmployeeCreate(BaseModel):
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
     cover_color: Optional[str] = None
-    certifications: Optional[List[str]] = []
-    cert_expiry: Optional[Dict[str, str]] = {}
 
 
 class EmployeeOut(BaseModel):
@@ -76,7 +74,6 @@ class EmployeeOut(BaseModel):
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
     cover_color: Optional[str] = None
-    certifications: List[str] = []
     burnout_score: int = 0
     status: str = "active"
 
@@ -92,9 +89,7 @@ class ShiftCreate(BaseModel):
     duration_hours: int = 8
     description: Optional[str] = None
     notes: Optional[str] = None
-    certifications: Optional[List[str]] = []
     urgency: Optional[str] = "medium"
-    pay_differential: Optional[str] = "+0%"
     eligible: Optional[int] = 0
     training_credit: Optional[bool] = False
     seniority_preference: Optional[str] = "none"

@@ -31,6 +31,7 @@ export default function NotificationsPage() {
   const [filter, setFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [markingAll, setMarkingAll] = useState(false)
   const toast = useToast()
 
   useEffect(() => {
@@ -73,12 +74,24 @@ export default function NotificationsPage() {
   }
 
   async function handleMarkAllRead() {
+    if (markingAll) return
     const unread = notifications.filter((n) => !n.read_at && !n.readAt)
-    for (const n of unread) {
-      try { await realAPI.markNotificationRead(n.id) } catch {}
+    if (unread.length === 0) return
+    setMarkingAll(true)
+    try {
+      // Use the bulk endpoint if available — falls back to per-item loop otherwise.
+      try {
+        await realAPI.markAllNotificationsRead()
+      } catch {
+        for (const n of unread) {
+          try { await realAPI.markNotificationRead(n.id) } catch {}
+        }
+      }
+      refresh()
+      toast.push('All notifications marked as read', { tone: 'success' })
+    } finally {
+      setMarkingAll(false)
     }
-    refresh()
-    toast.push('All notifications marked as read', { tone: 'success' })
   }
 
   return (
@@ -159,9 +172,9 @@ export default function NotificationsPage() {
             <Card hover={false}>
               <CardHeader icon="done_all" title="Actions" />
               <div className="mt-4 space-y-2">
-                <button onClick={handleMarkAllRead} disabled={unreadCount === 0} className="w-full btn-secondary disabled:opacity-40">
-                  <span className="material-symbols-outlined text-[18px]">done_all</span>
-                  Mark all as read ({unreadCount})
+                <button onClick={handleMarkAllRead} disabled={unreadCount === 0 || markingAll} className="w-full btn-secondary disabled:opacity-40">
+                  <span className="material-symbols-outlined text-[18px]">{markingAll ? 'progress_activity' : 'done_all'}</span>
+                  {markingAll ? 'Marking…' : `Mark all as read (${unreadCount})`}
                 </button>
                 <button onClick={refresh} className="w-full btn-ghost">
                   <span className="material-symbols-outlined text-[18px]">refresh</span>

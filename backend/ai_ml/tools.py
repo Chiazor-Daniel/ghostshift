@@ -19,7 +19,7 @@ import json
 import logging
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -63,7 +63,7 @@ class Tool:
 
 
 def _new_id(prefix: str) -> str:
-    return f"{prefix}_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(4)}"
+    return f"{prefix}_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}"
 
 
 def _err(msg: str) -> Dict[str, Any]:
@@ -368,12 +368,20 @@ def draft_leave_request(db: Session, user: User, args: Dict) -> Dict[str, Any]:
         if "T" in str(start_str):
             sd = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
         else:
-            sd = datetime.fromisoformat(f"{start_str}T00:00:00")
+            # Parse date string and create UTC-aware datetime at midnight
+            date_parts = str(start_str).split('-')
+            year, month, day = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
+            sd = datetime(year, month, day, 0, 0, 0, tzinfo=timezone.utc)
+        
         if "T" in str(end_str):
             ed = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
         else:
-            ed = datetime.fromisoformat(f"{end_str}T00:00:00")
-    except ValueError:
+            # Parse date string and create UTC-aware datetime at end of day
+            date_parts = str(end_str).split('-')
+            year, month, day = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
+            ed = datetime(year, month, day, 23, 59, 59, tzinfo=timezone.utc)
+    except (ValueError, IndexError) as e:
+        logger.error(f"Failed to parse leave dates in AI tool: {start_str} to {end_str} - {e}")
         return _err("Invalid date format")
     duration = (ed.date() - sd.date()).days + 1
     leave = LeaveRequest(
@@ -387,7 +395,7 @@ def draft_leave_request(db: Session, user: User, args: Dict) -> Dict[str, Any]:
         duration_days=duration,
         reason=args.get("reason"),
         status="pending",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(leave)
     db.commit()
@@ -411,9 +419,9 @@ def approve_leave(db: Session, user: User, args: Dict) -> Dict[str, Any]:
         return _err(f"Leave is already {leave.status}; nothing to approve.")
     leave.status = "approved"
     leave.approved_by = user.id
-    leave.approved_at = datetime.utcnow()
-    leave.decided_at = datetime.utcnow()
-    leave.updated_at = datetime.utcnow()
+    leave.approved_at = datetime.now(timezone.utc)
+    leave.decided_at = datetime.now(timezone.utc)
+    leave.updated_at = datetime.now(timezone.utc)
     # Notify the employee
     db.add(Notification(
         id=_new_id("n"),
@@ -423,7 +431,7 @@ def approve_leave(db: Session, user: User, args: Dict) -> Dict[str, Any]:
         title=f"Leave approved: {leave.type}",
         body=f"Your {leave.type} leave from {leave.start_date.date().isoformat()} to {leave.end_date.date().isoformat()} has been approved.",
         status="unread",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     ))
     db.commit()
     db.refresh(leave)
@@ -445,9 +453,9 @@ def reject_leave(db: Session, user: User, args: Dict) -> Dict[str, Any]:
     if leave.status != "pending":
         return _err(f"Leave is already {leave.status}.")
     leave.status = "rejected"
-    leave.rejected_at = datetime.utcnow()
-    leave.decided_at = datetime.utcnow()
-    leave.updated_at = datetime.utcnow()
+    leave.rejected_at = datetime.now(timezone.utc)
+    leave.decided_at = datetime.now(timezone.utc)
+    leave.updated_at = datetime.now(timezone.utc)
     db.add(Notification(
         id=_new_id("n"),
         org_id=leave.org_id,
@@ -456,7 +464,7 @@ def reject_leave(db: Session, user: User, args: Dict) -> Dict[str, Any]:
         title=f"Leave declined: {leave.type}",
         body=f"Your {leave.type} leave request was declined.",
         status="unread",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     ))
     db.commit()
     db.refresh(leave)
@@ -478,7 +486,7 @@ def cancel_leave(db: Session, user: User, args: Dict) -> Dict[str, Any]:
     if leave.status != "pending":
         return _err(f"Cannot cancel: leave is {leave.status}.")
     leave.status = "cancelled"
-    leave.updated_at = datetime.utcnow()
+    leave.updated_at = datetime.now(timezone.utc)
     db.commit()
     return _ok(leave=_serialize_leave(leave), message=f"Cancelled the {leave.type} leave request.")
 
@@ -500,7 +508,7 @@ def create_swap(db: Session, user: User, args: Dict) -> Dict[str, Any]:
         reason=args.get("reason"),
         ai_match_score=float(args.get("ai_match_score") or 80.0),
         status="pending",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(swap)
     db.commit()
@@ -534,10 +542,10 @@ def approve_swap(db: Session, user: User, args: Dict) -> Dict[str, Any]:
             shift.assigned_staff = existing
             if shift.required_staff and len(existing) >= (shift.required_staff or 1):
                 shift.status = "active"
-            shift.updated_at = datetime.utcnow()
+            shift.updated_at = datetime.now(timezone.utc)
     swap.status = "approved"
-    swap.approved_at = datetime.utcnow()
-    swap.updated_at = datetime.utcnow()
+    swap.approved_at = datetime.now(timezone.utc)
+    swap.updated_at = datetime.now(timezone.utc)
     db.add(Notification(
         id=_new_id("n"),
         org_id=swap.org_id,
@@ -546,7 +554,7 @@ def approve_swap(db: Session, user: User, args: Dict) -> Dict[str, Any]:
         title="Shift swap approved",
         body="Your swap request has been approved.",
         status="unread",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     ))
     db.commit()
     db.refresh(swap)
@@ -578,42 +586,60 @@ def assign_shift(db: Session, user: User, args: Dict) -> Dict[str, Any]:
     shift.assigned_staff = assigned
     if len(assigned) >= (shift.required_staff or 1):
         shift.status = "active"
-    shift.updated_at = datetime.utcnow()
+    shift.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(shift)
     return _ok(shift=_serialize_shift(shift), message=f"Assigned {employee.name} to {shift.title}.")
 
 
 def create_invite(db: Session, user: User, args: Dict) -> Dict[str, Any]:
-    """Admin: send an invitation to a new employee. Auto-accepted per project policy."""
+    """Admin: create a pending invite link for a new employee."""
     if user.role != "admin":
         return _err("Only admins can invite employees.")
     email = (args.get("email") or "").lower().strip()
+    name = (args.get("name") or "").strip()
     if not email or "@" not in email:
-        return _err("valid email is required")
-    existing = db.query(User).filter(User.email == email).first()
-    if existing:
-        return _err(f"{email} is already a member.")
-    temp_pw = secrets.token_urlsafe(8)
-    from middleware.auth import hash_password
-    new_user = User(
-        id=_new_id("user"),
+        return _err("A valid email is required to invite someone.")
+    if not name:
+        return _err("A name is required to invite someone.")
+
+    existing_user = db.query(User).filter(
+        User.org_id == user.org_id,
+        func.lower(User.email) == email.lower(),
+    ).first()
+    if existing_user:
+        return _err(f"{existing_user.name or email} is already a member.")
+
+    existing_pending = db.query(Invite).filter(
+        Invite.org_id == user.org_id,
+        func.lower(Invite.email) == email.lower(),
+        Invite.status == "pending",
+    ).first()
+    if existing_pending:
+        return _err(f"A pending invite for {email} already exists.")
+
+    role = args.get("role") or "employee"
+    department = args.get("department") or "General"
+    token = secrets.token_urlsafe(32)
+    invite = Invite(
+        id=f"inv_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}",
         org_id=user.org_id,
+        invited_by_id=user.id,
         email=email,
-        password_hash=hash_password(temp_pw),
-        name=args.get("name") or email.split("@")[0],
-        role=args.get("role") or "employee",
-        department=args.get("department") or "General",
-        status="active",
-        created_at=datetime.utcnow(),
+        name=name,
+        department=department,
+        role=role,
+        status="pending",
+        token=token,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        created_at=datetime.now(timezone.utc),
     )
-    db.add(new_user)
+    db.add(invite)
     db.commit()
-    db.refresh(new_user)
+    db.refresh(invite)
     return _ok(
-        user={"id": new_user.id, "email": new_user.email, "name": new_user.name,
-              "role": new_user.role, "temp_password": temp_pw},
-        message=f"Invited {email}. They can log in immediately with the temp password."
+        invite_url=f"/accept-invite/{token}",
+        message=f"Invite created for {name} ({email}). Share the link: /accept-invite/{token}"
     )
 
 
@@ -630,7 +656,7 @@ def mark_notification_read(db: Session, user: User, args: Dict) -> Dict[str, Any
     if not n:
         return _err("Notification not found")
     n.status = "read"
-    n.read_at = datetime.utcnow()
+    n.read_at = datetime.now(timezone.utc)
     db.commit()
     return _ok(notification=_serialize_notification(n), message="Marked as read.")
 
@@ -641,7 +667,7 @@ def mark_all_notifications_read(db: Session, user: User, args: Dict) -> Dict[str
         Notification.user_id == user.id,
         Notification.org_id == user.org_id,
         Notification.status == "unread",
-    ).update({"status": "read", "read_at": datetime.utcnow()})
+    ).update({"status": "read", "read_at": datetime.now(timezone.utc)})
     db.commit()
     return _ok(message="All notifications marked as read.")
 
@@ -856,8 +882,8 @@ ALL_TOOLS: List[Tool] = [
     ),
     Tool(
         name="create_invite",
-        description="Invite a new employee. Auto-accepts them into the org immediately and "
-                    "returns a temporary password they can use to log in. Admins only.",
+        description="Create a pending invite link for a new employee. Admins only. "
+                    "Returns a link the admin can share; the recipient sets their own password when they open it.",
         parameters={
             "type": "object",
             "properties": {
@@ -866,7 +892,7 @@ ALL_TOOLS: List[Tool] = [
                 "role": {"type": "string", "description": "employee | admin"},
                 "department": {"type": "string"},
             },
-            "required": ["email"],
+            "required": ["email", "name"],
         },
         executor=create_invite,
         requires_role="admin",

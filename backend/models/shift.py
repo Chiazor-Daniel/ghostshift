@@ -2,9 +2,9 @@
 Shift Model - Employee scheduling
 """
 
-from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Enum
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Enum, Index
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from config.database import Base
 import enum
 
@@ -28,6 +28,10 @@ class ShiftType(str, enum.Enum):
 
 class Shift(Base):
     __tablename__ = "shifts"
+    __table_args__ = (
+        Index('idx_shift_org_start_status', 'org_id', 'start_time', 'status'),
+        Index('idx_shift_employee_date', 'employee_id', 'start_time'),
+    )
 
     id = Column(String(50), primary_key=True, index=True)
     org_id = Column(String(50), ForeignKey("organizations.id", name="fk_shift_org"), nullable=False)
@@ -37,8 +41,8 @@ class Shift(Base):
     title = Column(String(255), nullable=False)
     description = Column(String(1000))
     department = Column(String(255))  # Free-text department name
-    start_time = Column(DateTime, nullable=False)
-    end_time = Column(DateTime, nullable=False)
+    start_time = Column(DateTime(timezone=True), nullable=False)
+    end_time = Column(DateTime(timezone=True), nullable=False)
     duration_hours = Column(Integer, nullable=False)
     start_hour = Column(Integer)  # For compat with frontend (0-23)
     status = Column(String(20), default="scheduled", nullable=False, index=True)
@@ -59,8 +63,13 @@ class Shift(Base):
     assigned_count = Column(Integer, default=0)
     required_count = Column(Integer, default=1)
     tags = Column(JSON, default=list)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Check-in / check-out — recorded by the assigned employee when they start
+    # and end a shift. Surfaced in analytics as actual time worked.
+    check_in_at = Column(DateTime(timezone=True), nullable=True)
+    check_out_at = Column(DateTime(timezone=True), nullable=True)
+    check_in_notes = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     organization = relationship("Organization", back_populates="shifts")

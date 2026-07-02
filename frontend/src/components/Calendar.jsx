@@ -44,7 +44,10 @@ const styleFor = (s) => statusStyles[s] || statusStyles.confirmed
 
 function eventsForDay(day, events) {
   const key = day.toDateString()
-  return events.filter((e) => new Date(e.date).toDateString() === key)
+  return events.filter((e) => {
+    const [y, m, d] = e.date.split('-').map(Number)
+    return new Date(y, m - 1, d).toDateString() === key
+  })
 }
 
 export default function Calendar({

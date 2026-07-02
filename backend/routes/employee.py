@@ -1,16 +1,18 @@
 """Employee routes — production ready."""
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, status, Depends
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from config.database import get_db
 from middleware.auth import get_current_user, hash_password
 from models.user import User
+from models.invite import Invite
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -19,15 +21,13 @@ router = APIRouter()
 class EmployeeCreate(BaseModel):
     name: str = Field(min_length=1)
     email: EmailStr
-    password: str = Field(min_length=4)
+    password: str = Field(min_length=8)
     role: Optional[str] = "employee"
     title: Optional[str] = None
     department: Optional[str] = None
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
     cover_color: Optional[str] = None
-    certifications: Optional[list] = []
-    cert_expiry: Optional[dict] = {}
 
 
 class EmployeeUpdate(BaseModel):
@@ -38,14 +38,12 @@ class EmployeeUpdate(BaseModel):
     avatar_url: Optional[str] = None
     cover_color: Optional[str] = None
     role: Optional[str] = None
-    certifications: Optional[list] = None
-    cert_expiry: Optional[dict] = None
     burnout_score: Optional[int] = None
     status: Optional[str] = None
 
 
 def _uid() -> str:
-    return f"user_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(4)}"
+    return f"user_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}"
 
 
 def _initials(name: str) -> str:
@@ -70,8 +68,7 @@ def _serialize(u: User) -> dict:
         "phone": u.phone,
         "avatar_url": u.avatar_url,
         "cover_color": u.cover_color,
-        "certifications": u.certifications or [],
-        "cert_expiry": u.cert_expiry or {},
+
         "burnout_score": u.burnout_score or 0,
         "burnout_trend": u.burnout_trend,
         "rating": u.rating,
@@ -86,11 +83,23 @@ def _serialize(u: User) -> dict:
 
 
 @router.get("/")
-async def list_employees(request: Request, db: Session = Depends(get_db)):
-    """Return all users in the org (admins + employees)."""
+async def list_employees(
+    request: Request,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    """Return users in the org (admins + employees) with pagination."""
     user = await get_current_user(request, db)
-    rows = db.query(User).filter(User.org_id == user.org_id).order_by(User.role, User.name).all()
-    return [_serialize(u) for u in rows]
+    skip = max(0, skip)
+    limit = max(1, min(limit, 200))
+    rows = db.query(User).filter(User.org_id == user.org_id).order_by(User.role, User.name).offset(skip).limit(limit).all()
+    return {
+        "items": [_serialize(u) for u in rows],
+        "total": db.query(User).filter(User.org_id == user.org_id).count(),
+        "skip": skip,
+        "limit": limit,
+    }
 
 
 @router.get("/{employee_id}")
@@ -115,6 +124,10 @@ async def create_employee(request: Request, payload: dict, db: Session = Depends
     if not email or not payload.get("name"):
         raise HTTPException(status_code=400, detail="name and email are required")
 
+    password = payload.get("password")
+    if not password or len(password) < 8:
+        raise HTTPException(status_code=400, detail="password is required and must be at least 8 characters")
+
     existing = db.query(User).filter(User.email == email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -123,18 +136,18 @@ async def create_employee(request: Request, payload: dict, db: Session = Depends
         id=_uid(),
         org_id=user.org_id,
         email=email,
-        password_hash=hash_password(payload.get("password") or "changeme"),
+        password_hash=hash_password(password),
         name=payload["name"].strip(),
         initials=_initials(payload["name"]),
         role=payload.get("role") or "employee",
         title=payload.get("title") or ("Administrator" if payload.get("role") == "admin" else "Staff"),
         department=payload.get("department") or "Unassigned",
         phone=payload.get("phone"),
-        avatar_url=payload.get("avatar_url") or f"https://ui-avatars.com/api/?name={payload['name'].replace(' ', '+')}&background=6366f1&color=fff&size=120",
-        cover_color=payload.get("cover_color") or "#6366f1",
-        certifications=payload.get("certifications") or [],
-        cert_expiry=payload.get("cert_expiry") or {},
-        created_at=datetime.utcnow(),
+        avatar_url=payload.get("avatar_url") or payload.get("avatar"),
+        bio=payload.get("bio"),
+        max_weekly_hours=payload.get("max_weekly_hours") or 40,
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     )
     db.add(new_user)
     db.commit()
@@ -152,9 +165,13 @@ async def update_employee(request: Request, employee_id: str, payload: dict,
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    # Only admins can change roles or burnouts; users can update themselves for non-sensitive
     if user.role != "admin" and user.id != emp.id:
         raise HTTPException(status_code=403, detail="Forbidden")
+
+    # Non-admin users cannot escalate their own role or status
+    if user.role != "admin":
+        payload.pop("role", None)
+        payload.pop("status", None)
 
     for k in ("name", "title", "department", "phone", "avatar_url", "cover_color",
               "role", "status"):
@@ -162,13 +179,10 @@ async def update_employee(request: Request, employee_id: str, payload: dict,
             setattr(emp, k, payload[k])
     if "name" in payload and payload["name"]:
         emp.initials = _initials(payload["name"])
-    if "certifications" in payload:
-        emp.certifications = payload["certifications"] or []
-    if "cert_expiry" in payload:
-        emp.cert_expiry = payload["cert_expiry"] or {}
+
     if "burnout_score" in payload and payload["burnout_score"] is not None:
         emp.burnout_score = int(payload["burnout_score"])
-    emp.updated_at = datetime.utcnow()
+    emp.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(emp)
     return _serialize(emp)
@@ -187,6 +201,14 @@ async def delete_employee(request: Request, employee_id: str, db: Session = Depe
     ).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
+
+    # Cascade delete any invite tied to this user so the employee list stays clean.
+    invites = db.query(Invite).filter(
+        Invite.org_id == user.org_id,
+        func.lower(Invite.email) == (emp.email or "").lower(),
+    ).all()
+    for inv in invites:
+        db.delete(inv)
 
     db.delete(emp)
     db.commit()

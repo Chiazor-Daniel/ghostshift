@@ -1,19 +1,23 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useUser } from '../layout/AppShell.jsx'
-import { Card, Badge, Drawer, EmptyState, Select, ListSkeleton, Pagination } from '../components/ui.jsx'
+import { Card, Badge, Drawer, EmptyState, Select, ListSkeleton, Pagination, ConfirmDialog } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
-import { formatDate, timeLabel, today } from '../data/store.js'
+import { formatDate, formatDateFull, timeLabel, today } from '../data/store.js'
 
-const tabs = (admin) => [
+const adminTabs = [
+  { id: 'browse', label: 'Browse open shifts' },
+]
+const employeeTabs = [
   { id: 'browse', label: 'Browse shifts' },
-  { id: 'requests', label: admin ? 'All requests' : 'My requests' },
+  { id: 'requests', label: 'My requests' },
 ]
 
 export default function MarketplacePage() {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [tab, setTab] = useState('browse')
   const [filter, setFilter] = useState('all')
   const [dept, setDept] = useState(() => searchParams.get('dept') || 'all')
@@ -32,10 +36,16 @@ export default function MarketplacePage() {
   const [requestModal, setRequestModal] = useState(null)
   const [browsePage, setBrowsePage] = useState(1)
   const [requestsPage, setRequestsPage] = useState(1)
+  // Per-action busy flags — prevent double-clicks on async buttons.
+  const [requestingShiftId, setRequestingShiftId] = useState(null)
+  const [deletingShiftId, setDeletingShiftId] = useState(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [autoFillShiftId, setAutoFillShiftId] = useState(null)
+  const [confirmAction, setConfirmAction] = useState(null)
   const toast = useToast()
   const { user: currentUser } = useUser()
   const isAdmin = currentUser?.role === 'admin'
-  const pageTabs = tabs(isAdmin)
+  const pageTabs = isAdmin ? adminTabs : employeeTabs
 
   useEffect(() => {
     refresh()
@@ -55,48 +65,73 @@ export default function MarketplacePage() {
   }
 
   const myRequests = requests.filter((s) => s.requester_id === currentUser?.id)
-  const allRequests = isAdmin ? requests : myRequests
 
   const depts = ['all', ...Array.from(new Set(openShifts.map((s) => s.department).filter(Boolean)))]
   const roles = ['all', ...Array.from(new Set(openShifts.map((s) => s.role).filter(Boolean)))]
 
-  async function takeShift(shift) {
+  async function requestPickup(shift) {
+    if (requestingShiftId) return
+    setRequestingShiftId(shift.id)
     try {
-      const requiredStaff = shift.required_staff || 1
-      const assignedCount = (shift.assigned_staff || []).length
-      if (assignedCount >= requiredStaff) {
-        toast.push('This shift is full. No slots available.', { tone: 'error' })
-        return
-      }
-      const swap = await realAPI.createSwap({
-        from_shift_id: shift.id,
-        reason: `Requesting ${shift.role || shift.title} shift at ${shift.department}`,
-      })
-      const queue = requests.filter(r => r.from_shift_id === shift.id && r.status === 'pending')
-      const position = queue.findIndex(q => q.id === swap.id) + 1
-      setRequestModal({ ...shift, queuePosition: position, totalRequests: queue.length })
+      await realAPI.createSwap({ from_shift_id: shift.id, kind: 'pickup', reason: 'Picking up this shift' })
+      setRequestModal({ ...shift, kind: 'pickup' })
       refresh()
     } catch (err) {
-      toast.push(err.message || 'Could not submit request', { tone: 'error' })
+      toast.push(err.message || 'Could not request pickup', { tone: 'error' })
+    } finally {
+      setRequestingShiftId(null)
     }
   }
 
-  async function handleDeleteShift(shift) {
-    if (!confirm('Delete this open shift? This cannot be undone.')) return
+  async function handleAutoFill(shift) {
+    if (autoFillShiftId) return
+    setAutoFillShiftId(shift.id)
     try {
-      await realAPI.deleteShift(shift.id)
+      const result = await realAPI.autoFillShift(shift.id)
+      const name = result?.assigned_to?.name || 'best match'
+      const score = result?.match_score ?? '—'
+      toast.push(`Auto-assigned to ${name} (match: ${score}%)`, { tone: 'success' })
       setDrawerShift(null)
-      setEditShift(null)
       refresh()
-      toast.push('Shift deleted', { tone: 'info' })
     } catch (err) {
-      toast.push(err.message || 'Could not delete shift', { tone: 'error' })
+      const msg = err?.message || 'Could not auto-fill'
+      toast.push(msg, { tone: 'error' })
+    } finally {
+      setAutoFillShiftId(null)
+    }
+  }
+
+  function handleDeleteShift(shift) {
+    if (deletingShiftId) return
+    setConfirmAction({ type: 'delete', shift, message: 'Delete this open shift? This cannot be undone.' })
+  }
+
+  async function executeConfirmAction() {
+    if (!confirmAction) return
+    const action = confirmAction
+    setConfirmAction(null)
+
+    if (action.type === 'delete') {
+      const { shift } = action
+      setDeletingShiftId(shift.id)
+      try {
+        await realAPI.deleteShift(shift.id)
+        setDrawerShift(null)
+        setEditShift(null)
+        refresh()
+        toast.push('Shift deleted', { tone: 'info' })
+      } catch (err) {
+        toast.push(err.message || 'Could not delete shift', { tone: 'error' })
+      } finally {
+        setDeletingShiftId(null)
+      }
     }
   }
 
   async function handleSaveEdit(e) {
     e.preventDefault()
-    if (!editShift) return
+    if (!editShift || savingEdit) return
+    setSavingEdit(true)
     try {
       await realAPI.updateShift(editShift.id, {
         title: editShift.title,
@@ -106,10 +141,8 @@ export default function MarketplacePage() {
         start_hour: Number(editShift.start_hour ?? editShift.startHour ?? 0),
         duration_hours: Number(editShift.duration_hours ?? editShift.durationHours ?? 8),
         urgency: editShift.urgency,
-        pay_differential: editShift.pay_differential || editShift.payDifferential,
         eligible_count: Number(editShift.eligible_count ?? editShift.eligible ?? 0),
         description: editShift.description,
-        certifications: editShift.certifications || [],
       })
       setDrawerShift({ ...editShift })
       setEditShift(null)
@@ -117,10 +150,13 @@ export default function MarketplacePage() {
       toast.push('Shift updated', { tone: 'success' })
     } catch (err) {
       toast.push(err.message || 'Could not save shift', { tone: 'error' })
+    } finally {
+      setSavingEdit(false)
     }
   }
 
   const filtered = openShifts.filter((s) => {
+    if (s.date < today().toISOString().slice(0, 10)) return false
     if (filter === 'high' && s.urgency !== 'high') return false
     if (filter === 'me' && (s.eligible_count || 0) <= 0) return false
     if (dept !== 'all' && s.department !== dept) return false
@@ -129,19 +165,23 @@ export default function MarketplacePage() {
   })
 
   useEffect(() => { setBrowsePage(1) }, [filter, dept, role])
-  useEffect(() => { setRequestsPage(1) }, [tab])
+  useEffect(() => {
+    setBrowsePage(1); setRequestsPage(1)
+  }, [tab])
 
   const BROWSE_PAGE_SIZE = 12
   const REQUESTS_PAGE_SIZE = 9
   const browsePageItems = filtered.slice((browsePage - 1) * BROWSE_PAGE_SIZE, browsePage * BROWSE_PAGE_SIZE)
-  const requestsPageItems = allRequests.slice((requestsPage - 1) * REQUESTS_PAGE_SIZE, requestsPage * REQUESTS_PAGE_SIZE)
+  const employeeRequestsItems = myRequests.slice((requestsPage - 1) * REQUESTS_PAGE_SIZE, requestsPage * REQUESTS_PAGE_SIZE)
 
   const slotsRemaining = (s) => Math.max(0, (s.required_staff || 1) - ((s.assigned_staff || []).length))
 
   return (
     <>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-display-sm font-bold text-on-surface">Open Shifts</h1>
+        <h1 className="font-display-sm font-bold text-on-surface">
+          Shift Marketplace
+        </h1>
         {tab === 'requests' && myRequests.length > 0 && (
           <button
             onClick={() => { toast.push('Cleared request history', { tone: 'info' }) }}
@@ -152,23 +192,26 @@ export default function MarketplacePage() {
         )}
       </div>
 
-      <div className="flex items-center gap-1 bg-surface-variant/60 p-1 rounded-xl mb-5 w-fit">
-        {pageTabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`px-3 py-1.5 rounded-lg font-label-sm md:font-label-md text-label-sm md:text-label-md transition-all ${
-              tab === t.id
-                ? 'bg-surface shadow-soft-sm text-primary font-bold'
-                : 'text-on-surface-variant'
-            }`}
-          >
-            {t.label}
-            {t.id === 'requests' && myRequests.length > 0 && !isAdmin && (
-              <span className="ml-1.5 chip bg-primary/10 text-primary text-[10px]">{myRequests.length}</span>
-            )}
-          </button>
-        ))}
+      <div className="flex items-center gap-1 bg-surface-variant/60 p-1 rounded-xl mb-5 w-fit overflow-x-auto">
+        {pageTabs.map((t) => {
+          const badge = t.id === 'requests' ? myRequests.length : 0
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-3 py-1.5 rounded-lg font-label-sm md:font-label-md text-label-sm md:text-label-md transition-all whitespace-nowrap ${
+                tab === t.id
+                  ? 'bg-surface shadow-soft-sm text-primary font-bold'
+                  : 'text-on-surface-variant'
+              }`}
+            >
+              {t.label}
+              {badge > 0 && (
+                <span className="ml-1.5 chip bg-primary/10 text-primary text-[10px]">{badge}</span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {tab === 'browse' && (
@@ -252,21 +295,13 @@ export default function MarketplacePage() {
                         <div className="flex items-center gap-4 mt-3 text-sm text-on-surface-variant">
                           <span className="flex items-center gap-1">
                             <span className="material-symbols-outlined text-[16px]">calendar_today</span>
-                            {new Date(s.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                            {formatDateFull(s.date)}
                           </span>
                           <span className="flex items-center gap-1">
                             <span className="material-symbols-outlined text-[16px]">schedule</span>
                             {timeLabel(s.start_hour)}–{timeLabel(s.start_hour + s.duration_hours)}
                           </span>
                         </div>
-
-                        {s.certifications?.length > 0 && (
-                          <div className="mt-3 flex flex-wrap gap-1">
-                            {s.certifications.map((c) => (
-                              <span key={c} className="chip bg-surface-variant text-on-surface-variant text-[10px]">{c}</span>
-                            ))}
-                          </div>
-                        )}
 
                         {queue.length > 0 && (
                           <div className="mt-3 p-2 rounded-lg bg-surface-variant/30">
@@ -281,26 +316,40 @@ export default function MarketplacePage() {
                           </div>
                         )}
 
-                        <div className="mt-4 pt-3 border-t border-outline-variant/30 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            {s.pay_differential && <span className="chip bg-primary/10 text-primary text-xs font-semibold">{s.pay_differential}</span>}
-                            <span className="font-label-sm text-label-sm text-on-surface-variant">
+                        <div className="mt-4 pt-3 border-t border-outline-variant/30 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="font-label-sm text-label-sm text-on-surface-variant truncate">
                               {s.eligible_count || 0} eligible
                             </span>
                           </div>
-                          {isFull ? (
-                            <span className="text-xs text-error flex items-center gap-1">
-                              <span className="material-symbols-outlined text-[14px]">block</span> Full
-                            </span>
-                          ) : requested ? (
-                            <span className="text-xs text-warning flex items-center gap-1">
-                              <span className="material-symbols-outlined text-[14px]">hourglass_top</span> Pending
-                            </span>
-                          ) : (
-                            <span className="text-xs text-primary flex items-center gap-1">
-                              <span className="material-symbols-outlined text-[14px]">open_in_new</span> Details
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {isAdmin && !isFull && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleAutoFill(s) }}
+                                disabled={autoFillShiftId === s.id}
+                                title="Find the best free+qualified person and assign them automatically"
+                                className="chip bg-secondary/15 text-secondary border border-secondary/30 hover:bg-secondary/25 transition-colors text-[10px] font-semibold flex items-center gap-1 disabled:opacity-60"
+                              >
+                                <span className="material-symbols-outlined text-[12px]">
+                                  {autoFillShiftId === s.id ? 'progress_activity' : 'auto_awesome'}
+                                </span>
+                                {autoFillShiftId === s.id ? 'Filling…' : 'Auto-fill'}
+                              </button>
+                            )}
+                            {isFull ? (
+                              <span className="text-xs text-error flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px]">block</span> Full
+                              </span>
+                            ) : requested ? (
+                              <span className="text-xs text-warning flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px]">hourglass_top</span> Pending
+                              </span>
+                            ) : (
+                              <span className="text-xs text-primary flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px]">open_in_new</span> Details
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </Card>
                     </motion.div>
@@ -313,26 +362,26 @@ export default function MarketplacePage() {
         </section>
       )}
 
-      {tab === 'requests' && (
+      {/* Employee: My requests */}
+      {!isAdmin && tab === 'requests' && (
         <section className="page-section">
           {loading ? (
             <ListSkeleton variant="grid" count={6} />
-          ) : allRequests.length === 0 ? (
+          ) : myRequests.length === 0 ? (
             <EmptyState
               icon="assignment"
               title="No requests yet"
-              description={isAdmin ? 'No swap requests have been submitted yet.' : "Browse open shifts and take one — it'll appear here pending approval."}
+              description="Browse open shifts and take one — it'll appear here pending approval."
             />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {requestsPageItems.map((req) => {
+              {employeeRequestsItems.map((req) => {
                 const shift = openShifts.find(s => s.id === req.from_shift_id)
                 const displayRole = shift?.role || req.role || 'Shift request'
                 const displayDept = shift?.department || ''
-                const displayDate = shift?.date || req.submitted_at || req.submittedAt
+                const displayDate = shift?.date || req.created_at
                 const displayStart = shift?.start_hour || 0
                 const displayDuration = shift?.duration_hours || 0
-                const displayPay = shift?.pay_differential || ''
                 return (
                   <Card key={req.id} hover={false}>
                     <div className="flex items-start justify-between mb-sm">
@@ -342,9 +391,6 @@ export default function MarketplacePage() {
                         </Badge>
                         <h3 className="font-headline-md text-lg font-bold text-on-surface mt-sm">{displayRole}</h3>
                         <p className="font-body-sm text-body-sm text-on-surface-variant">{displayDept}</p>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-headline-md text-headline-md font-bold text-primary leading-none">{displayPay}</div>
                       </div>
                     </div>
 
@@ -382,7 +428,7 @@ export default function MarketplacePage() {
                   </Card>
                 )
               })}
-              <Pagination page={requestsPage} pageSize={REQUESTS_PAGE_SIZE} total={allRequests.length} onChange={setRequestsPage} />
+              <Pagination page={requestsPage} pageSize={REQUESTS_PAGE_SIZE} total={myRequests.length} onChange={setRequestsPage} />
             </div>
           )}
         </section>
@@ -425,25 +471,19 @@ export default function MarketplacePage() {
             </div>
             <div className="grid grid-cols-2 gap-md">
               <div>
-                <label className="font-label-sm text-label-sm text-on-surface-variant">Pay differential</label>
-                <input value={editShift.pay_differential || ''} onChange={(e) => setEditShift({ ...editShift, pay_differential: e.target.value })} className="input-base mt-xs w-full" placeholder="e.g. +20%" />
-              </div>
-              <div>
                 <label className="font-label-sm text-label-sm text-on-surface-variant">Eligible count</label>
                 <input type="number" value={editShift.eligible_count || 0} onChange={(e) => setEditShift({ ...editShift, eligible_count: Number(e.target.value) })} className="input-base mt-xs w-full" />
               </div>
-            </div>
-            <div>
-              <label className="font-label-sm text-label-sm text-on-surface-variant">Certifications (comma-separated)</label>
-              <input value={(editShift.certifications || []).join(', ')} onChange={(e) => setEditShift({ ...editShift, certifications: e.target.value.split(',').map(c => c.trim()).filter(Boolean) })} className="input-base mt-xs w-full" placeholder="BLS, ACLS" />
             </div>
             <div>
               <label className="font-label-sm text-label-sm text-on-surface-variant">Description</label>
               <textarea value={editShift.description || ''} onChange={(e) => setEditShift({ ...editShift, description: e.target.value })} className="input-base mt-xs w-full min-h-[80px] resize-none" />
             </div>
             <div className="flex items-center justify-end gap-sm pt-sm border-t border-outline-variant/30">
-              <button type="button" onClick={() => setEditShift(null)} className="btn-ghost">Cancel</button>
-              <button type="submit" className="btn-primary">Save changes</button>
+              <button type="button" onClick={() => setEditShift(null)} disabled={savingEdit} className="btn-ghost disabled:opacity-60">Cancel</button>
+              <button type="submit" disabled={savingEdit} className="btn-primary disabled:opacity-60">
+                {savingEdit ? 'Saving…' : 'Save changes'}
+              </button>
             </div>
           </form>
         )}
@@ -461,7 +501,6 @@ export default function MarketplacePage() {
                 <span className={`w-2 h-2 rounded-full ${isFull ? 'bg-error' : drawerShift.urgency === 'high' ? 'bg-error' : drawerShift.urgency === 'medium' ? 'bg-warning' : 'bg-info'}`} />
                 <span className="font-label-sm text-label-sm text-on-surface-variant">{drawerShift.department}</span>
                 <div className="flex-1" />
-                {drawerShift.pay_differential && <span className="chip bg-primary/10 text-primary text-xs font-semibold">{drawerShift.pay_differential}</span>}
               </div>
 
               <div>
@@ -469,7 +508,7 @@ export default function MarketplacePage() {
                 <div className="flex items-center gap-4 mt-2 text-sm text-on-surface-variant">
                   <span className="flex items-center gap-1">
                     <span className="material-symbols-outlined text-[16px]">calendar_today</span>
-                    {new Date(drawerShift.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    {formatDateFull(drawerShift.date)}
                   </span>
                   <span className="flex items-center gap-1">
                     <span className="material-symbols-outlined text-[16px]">schedule</span>
@@ -498,25 +537,34 @@ export default function MarketplacePage() {
                 </div>
               )}
 
-              {drawerShift.certifications?.length > 0 && (
-                <div className="bg-surface-variant/40 rounded-xl p-4">
-                  <div className="font-label-sm text-label-sm text-on-surface-variant mb-2">Required certifications</div>
-                  <div className="flex flex-wrap gap-1">
-                    {drawerShift.certifications.map((c) => (
-                      <span key={c} className="chip bg-success/10 text-success text-xs">{c}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {isAdmin ? (
                 <div className="space-y-3 pt-2">
-                  <button onClick={() => setEditShift({ ...drawerShift })} className="btn-secondary w-full justify-center">
-                    <span className="material-symbols-outlined text-[18px]">edit</span> Edit shift
+                  <button
+                    onClick={() => handleAutoFill(drawerShift)}
+                    disabled={isFull || autoFillShiftId === drawerShift.id}
+                    className="btn-primary w-full justify-center disabled:opacity-60"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      {autoFillShiftId === drawerShift.id ? 'progress_activity' : 'auto_awesome'}
+                    </span>
+                    {autoFillShiftId === drawerShift.id ? 'Auto-filling…' : isFull ? 'Shift is full' : 'Auto-fill (AI)'}
                   </button>
-                  <button onClick={() => handleDeleteShift(drawerShift)} className="btn-ghost w-full justify-center text-error hover:bg-error/10">
-                    <span className="material-symbols-outlined text-[18px]">delete</span> Delete shift
-                  </button>
+                  <p className="font-label-sm text-label-sm text-on-surface-variant text-center -mt-1">
+                    Finds the best free+qualified person and assigns them in one click
+                  </p>
+                  <div className="flex items-center gap-2 pt-2 border-t border-outline-variant/30">
+                    <button onClick={() => setEditShift({ ...drawerShift })} className="btn-secondary flex-1 justify-center">
+                      <span className="material-symbols-outlined text-[18px]">edit</span> Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteShift(drawerShift)}
+                      disabled={deletingShiftId === drawerShift.id}
+                      className="btn-ghost flex-1 justify-center text-error hover:bg-error/10 disabled:opacity-60"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">delete</span>
+                      {deletingShiftId === drawerShift.id ? '…' : 'Delete'}
+                    </button>
+                  </div>
                 </div>
               ) : req ? (
                 <div className="bg-warning/5 border border-warning/20 rounded-xl p-4 text-center">
@@ -552,8 +600,13 @@ export default function MarketplacePage() {
                       </div>
                     </div>
                   </div>
-                  <button onClick={() => takeShift(drawerShift)} className="btn-primary w-full justify-center">
-                    <span className="material-symbols-outlined text-[18px]">check</span> Request this shift
+                  <button
+                    onClick={() => requestPickup(drawerShift)}
+                    disabled={requestingShiftId !== null}
+                    className="btn-primary w-full justify-center disabled:opacity-60"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">{requestingShiftId === drawerShift.id ? 'progress_activity' : 'check'}</span>
+                    {requestingShiftId === drawerShift.id ? 'Requesting…' : 'Request pickup'}
                   </button>
                 </>
               )}
@@ -565,15 +618,15 @@ export default function MarketplacePage() {
       {requestModal && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="fixed inset-0 bg-black/40 z-[110] flex items-center justify-center p-4" onClick={() => setRequestModal(null)}>
           <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} onClick={(e) => e.stopPropagation()} className="bg-surface rounded-2xl p-6 md:p-xl max-w-md w-full shadow-soft-xl mx-4">
-            <div className="w-12 h-12 rounded-full bg-success/10 text-success flex items-center justify-center mx-auto mb-4">
-              <span className="material-symbols-outlined text-[24px]">check_circle</span>
+            <div className="w-12 h-12 rounded-full bg-warning/10 text-warning flex items-center justify-center mx-auto mb-4">
+              <span className="material-symbols-outlined text-[24px]">hourglass_top</span>
             </div>
-            <h3 className="font-headline-md text-headline-md text-on-surface font-bold text-center">Request submitted</h3>
+            <h3 className="font-headline-md text-headline-md text-on-surface font-bold text-center">Pickup request submitted</h3>
             <p className="font-body-md text-body-md text-on-surface-variant text-center mt-sm">
-              Your request for <strong>{requestModal.role || requestModal.title}</strong> on {formatDate(requestModal.date)} has been sent to your manager.
+              Your request for <strong>{requestModal.role || requestModal.title}</strong> on {formatDate(requestModal.date)} has been sent to your manager for approval.
             </p>
-            <button onClick={() => { setRequestModal(null); setDrawerShift(null); setTab('requests') }} className="btn-primary w-full justify-center mt-4">
-              View my requests
+            <button onClick={() => { setRequestModal(null); setDrawerShift(null); navigate('/app/employee') }} className="btn-primary w-full justify-center mt-4">
+              View my schedule
             </button>
             <button onClick={() => { setRequestModal(null); setDrawerShift(null) }} className="btn-secondary w-full justify-center mt-2">
               Keep browsing
@@ -581,6 +634,16 @@ export default function MarketplacePage() {
           </motion.div>
         </motion.div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={executeConfirmAction}
+        title="Delete shift?"
+        message={confirmAction?.message || 'Are you sure?'}
+        confirmLabel="Delete"
+        tone="danger"
+      />
     </>
   )
 }

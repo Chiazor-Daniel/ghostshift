@@ -7,7 +7,7 @@ import os
 import sys
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,9 +39,11 @@ from routes import auth, organization, employee, shift, swap, leave, availabilit
 
 # Import WebSocket
 try:
-    from websocket import app as ws_app
+    from websocket.app import router as ws_router
+    WEBSOCKET_ENABLED = True
 except Exception as e:
     logger.warning(f"WebSocket module not loaded: {e}")
+    WEBSOCKET_ENABLED = False
 
 
 @asynccontextmanager
@@ -49,7 +51,9 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     logger.info("Starting GhostShift Backend...")
 
-    # Create database tables
+    # Create database tables (covers fresh DBs without migration history).
+    # For managed deployments, run `alembic upgrade head` as a separate deploy
+    # command rather than inside the app lifespan.
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created/verified")
@@ -63,6 +67,15 @@ async def lifespan(app: FastAPI):
         logger.info("Database connection successful")
     except Exception as e:
         logger.error(f"Database connection failed: {e}")
+
+    # Seed demo data on first boot (idempotent — no-op if already seeded)
+    # Set SEED_DEMO=false to skip in production environments with real data.
+    if os.getenv("SEED_DEMO", "true").lower() in ("1", "true", "yes"):
+        try:
+            import seed_demo
+            seed_demo.main()
+        except Exception as e:
+            logger.warning(f"Demo seed step skipped: {e}")
 
     yield
 
@@ -82,44 +95,44 @@ app = FastAPI(
 )
 
 # Configure CORS
-# Note: allow_credentials=True forbids allow_origins=["*"] (Starlette drops the
-# wildcard silently). Use a regex that matches anything so any demo/tunnel
-# origin works without needing to update this list each time.
-origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+# Use only explicitly configured origins. allow_credentials=True combined with a
+# wildcard regex lets any malicious website make authenticated requests, so we
+# never allow that. For local dev, set CORS_ORIGINS in your .env.
+_origins_env = os.getenv("CORS_ORIGINS")
+if not _origins_env:
+    raise RuntimeError(
+        "CORS_ORIGINS is not set. Configure it in the environment or .env file, e.g. "
+        "CORS_ORIGINS=http://localhost:5173"
+    )
+origins = [o.strip() for o in _origins_env.split(",") if o.strip()]
 
 
 @app.middleware("http")
 async def cors_preflight_handler(request: Request, call_next):
-    """Short-circuit OPTIONS preflight requests with explicit CORS headers.
-
-    FastAPI's built-in CORSMiddleware sometimes fails to attach the response
-    headers on cross-origin preflight requests routed through tunnels (e.g.
-    ngrok free-tier) — the browser then blocks the actual request as
-    ERR_FAILED. By handling OPTIONS explicitly we guarantee the preflight
-    succeeds regardless of routing layer behaviour.
-    """
+    """Short-circuit OPTIONS preflight requests with explicit CORS headers."""
     if request.method == "OPTIONS":
-        origin = request.headers.get("origin", "*")
-        requested_headers = request.headers.get("access-control-request-headers", "*")
-        return JSONResponse(
-            status_code=200,
-            content={},
-            headers={
-                "Access-Control-Allow-Origin": origin,
-                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-                "Access-Control-Allow-Headers": requested_headers,
-                "Access-Control-Allow-Credentials": "true",
-                "Access-Control-Max-Age": "600",
-                "Vary": "Origin",
-            },
-        )
+        origin = request.headers.get("origin")
+        if origin and origin in origins:
+            requested_headers = request.headers.get("access-control-request-headers", "*")
+            return JSONResponse(
+                status_code=200,
+                content={},
+                headers={
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+                    "Access-Control-Allow-Headers": requested_headers,
+                    "Access-Control-Allow-Credentials": "true",
+                    "Access-Control-Max-Age": "600",
+                    "Vary": "Origin",
+                },
+            )
+        return JSONResponse(status_code=400, content={"detail": "Origin not allowed"})
     return await call_next(request)
 
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
@@ -140,10 +153,15 @@ app.include_router(integration.router, prefix="/api/integrations", tags=["Integr
 app.include_router(audit.router, prefix="/api/audit", tags=["Audit Logs"])
 app.include_router(invite.router, prefix="/api/invites", tags=["Invitations"])
 
+# Include WebSocket router
+if WEBSOCKET_ENABLED:
+    app.include_router(ws_router, prefix="/ws", tags=["WebSocket"])
+    logger.info("WebSocket support enabled")
+
 
 @app.get("/")
 async def root():
-    """Root endpoint"""
+    """Root endpoint."""
     return {
         "name": "GhostShift API",
         "version": "2.0.0",
@@ -165,13 +183,16 @@ async def root():
     }
 
 
+
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
         "version": "2.0.0",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -196,6 +217,5 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 if __name__ == "__main__":
     import uvicorn
-    from datetime import datetime
     port = int(os.getenv("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False, log_level="info")

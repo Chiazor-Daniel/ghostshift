@@ -5,6 +5,35 @@ import { ROLES } from '../data/roles.js'
 import { useToast } from './Toast.jsx'
 import { MobileNavContext } from '../layout/AppShell.jsx'
 import { Avatar } from './ui.jsx'
+import { realAPI } from '../services/realAPI.js'
+
+// Map server notification type → icon + bg
+const NOTIF_STYLE = {
+  auto_assigned: { icon: 'auto_awesome', iconBg: 'bg-success/15 text-success' },
+  shift_assigned: { icon: 'event_available', iconBg: 'bg-primary/10 text-primary' },
+  shift_approved: { icon: 'check_circle', iconBg: 'bg-success/10 text-success' },
+  shift_rejected: { icon: 'cancel', iconBg: 'bg-error/10 text-error' },
+  swap_request: { icon: 'swap_horiz', iconBg: 'bg-primary/10 text-primary' },
+  swap_approved: { icon: 'check_circle', iconBg: 'bg-success/10 text-success' },
+  swap_rejected: { icon: 'cancel', iconBg: 'bg-error/10 text-error' },
+  burnout_alert: { icon: 'monitor_heart', iconBg: 'bg-error/10 text-error' },
+  reminder: { icon: 'event_note', iconBg: 'bg-primary/10 text-primary' },
+  info: { icon: 'info', iconBg: 'bg-primary/10 text-primary' },
+}
+
+function relativeTime(iso) {
+  if (!iso) return ''
+  try {
+    const diff = Date.now() - new Date(iso).getTime()
+    if (diff < 0) return 'just now'
+    const mins = Math.floor(diff / 60000)
+    if (mins < 1) return 'just now'
+    if (mins < 60) return `${mins} min ago`
+    const hrs = Math.floor(mins / 60)
+    if (hrs < 24) return `${hrs} hr ago`
+    return `${Math.floor(hrs / 24)}d ago`
+  } catch { return '' }
+}
 
 // First letter of first name + first letter of last name, uppercased.
 // "Aisha Patel" -> "AP". "Marcus" -> "MA". Falls back to "?".
@@ -22,6 +51,71 @@ export default function TopBar({ user, activeRole, title, subtitle, actions }) {
   const [showMenu, setShowMenu] = useState(false)
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
   const notifRef = useRef(null)
+
+  // Real notifications from the API. Re-fetch every time the dropdown opens
+  // and every 60s while it's open so newly auto-assigned shifts surface fast.
+  const [notifs, setNotifs] = useState([])
+  const [notifsLoading, setNotifsLoading] = useState(false)
+
+  async function refreshNotifs() {
+    setNotifsLoading(true)
+    try {
+      const list = await realAPI.getNotifications()
+      const sorted = (list || []).slice().sort((a, b) => {
+        const ta = a.created_at ? new Date(a.created_at).getTime() : 0
+        const tb = b.created_at ? new Date(b.created_at).getTime() : 0
+        return tb - ta
+      })
+      setNotifs(sorted)
+    } catch {
+      // Silent — if the user isn't authed yet, leave the bell empty.
+      setNotifs([])
+    } finally {
+      setNotifsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (showNotifs) {
+      refreshNotifs()
+      const id = setInterval(refreshNotifs, 60_000)
+      return () => clearInterval(id)
+    }
+  }, [showNotifs])
+
+  async function markRead(id) {
+    try {
+      await realAPI.markNotificationRead(id)
+      setNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, status: 'read' } : n)))
+    } catch {
+      // ignore
+    }
+  }
+
+  async function markAllRead() {
+    try {
+      await realAPI.markAllNotificationsRead()
+      setNotifs((prev) => prev.map((n) => ({ ...n, status: 'read' })))
+    } catch {
+      // ignore
+    }
+  }
+
+  const notifications = notifs.map((n) => {
+    const style = NOTIF_STYLE[n.type] || NOTIF_STYLE.info
+    return {
+      id: n.id,
+      icon: style.icon,
+      iconBg: style.iconBg,
+      title: n.title || n.type || 'Notification',
+      body: n.body || '',
+      time: relativeTime(n.created_at),
+      unread: n.status !== 'read',
+      link: n.link || null,
+    }
+  })
+
+  const unreadCount = notifications.filter((n) => n.unread).length
 
   const toggleTheme = useCallback(() => {
     const next = !dark
@@ -43,54 +137,11 @@ export default function TopBar({ user, activeRole, title, subtitle, actions }) {
   }, [])
 
   function signOut() {
-    localStorage.removeItem('gs_role')
+    realAPI.clearSession()
     setShowMenu(false)
     toast.push('Signed out', { tone: 'info' })
     navigate('/login')
   }
-
-  const notifications = [
-    {
-      icon: 'swap_horiz',
-      iconBg: 'bg-primary/10 text-primary',
-      title: 'New swap request from James Park',
-      body: 'Wants to swap Friday day shift — AI score 94%',
-      time: '2 min ago',
-      unread: true,
-    },
-    {
-      icon: 'monitor_heart',
-      iconBg: 'bg-error/10 text-error',
-      title: 'Burnout risk elevated',
-      body: 'Olivia Reyes crossed 85% burnout threshold',
-      time: '14 min ago',
-      unread: true,
-    },
-    {
-      icon: 'auto_awesome',
-      iconBg: 'bg-success/10 text-success',
-      title: 'AI found 3 better matches',
-      body: 'For open ICU-B shift on Friday',
-      time: '32 min ago',
-      unread: true,
-    },
-    {
-      icon: 'check_circle',
-      iconBg: 'bg-success/10 text-success',
-      title: 'Swap approved',
-      body: 'Your Thursday ICU-B shift swapped with James Park',
-      time: '1 hour ago',
-      unread: false,
-    },
-    {
-      icon: 'event_note',
-      iconBg: 'bg-primary/10 text-primary',
-      title: 'July schedule published',
-      body: 'Draft now open for self-scheduling until 7/1',
-      time: '3 hours ago',
-      unread: false,
-    },
-  ]
 
   return (
     <header className="sticky top-0 z-20 h-16 bg-surface/80 backdrop-blur-md border-b border-outline-variant/30 px-4 md:px-6 flex items-center justify-between gap-2">
@@ -148,7 +199,11 @@ export default function TopBar({ user, activeRole, title, subtitle, actions }) {
             className="btn-icon relative hidden sm:inline-flex"
           >
             <span className="material-symbols-outlined">notifications</span>
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error animate-pulse" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-error text-white text-[10px] font-bold flex items-center justify-center">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
           </button>
 
           <AnimatePresence>
@@ -162,18 +217,30 @@ export default function TopBar({ user, activeRole, title, subtitle, actions }) {
               >
                 <div className="flex items-center justify-between px-md py-sm border-b border-outline-variant/30">
                   <h3 className="font-label-md text-label-md text-on-surface">Notifications</h3>
-                  <button
-                    onClick={() => toast.push('All notifications marked as read', { tone: 'success' })}
-                    className="font-label-sm text-label-sm text-primary hover:underline"
-                  >
-                    Mark all read
-                  </button>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllRead}
+                      className="font-label-sm text-label-sm text-primary hover:underline"
+                    >
+                      Mark all read
+                    </button>
+                  )}
                 </div>
                 <div className="max-h-[420px] overflow-y-auto scrollbar-thin">
-                  {notifications.map((n, i) => (
+                  {notifsLoading && notifications.length === 0 && (
+                    <div className="px-md py-lg text-center text-on-surface-variant text-sm">Loading…</div>
+                  )}
+                  {!notifsLoading && notifications.length === 0 && (
+                    <div className="px-md py-lg text-center text-on-surface-variant text-sm">
+                      <span className="material-symbols-outlined text-[32px] block mb-1">notifications_none</span>
+                      You're all caught up
+                    </div>
+                  )}
+                  {notifications.map((n) => (
                     <div
-                      key={i}
+                      key={n.id || n.title}
                       onClick={() => {
+                        if (n.unread) markRead(n.id)
                         setShowNotifs(false)
                         toast.push(n.title, { tone: 'info' })
                       }}
@@ -262,18 +329,6 @@ export default function TopBar({ user, activeRole, title, subtitle, actions }) {
                       person
                     </span>
                     Profile
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowMenu(false)
-                      navigate('/app/support')
-                    }}
-                    className="w-full text-left flex items-center gap-sm px-md py-sm text-on-surface hover:bg-surface-variant/60 transition-colors font-body-sm text-body-sm"
-                  >
-                    <span className="material-symbols-outlined text-[18px] text-on-surface-variant">
-                      help_outline
-                    </span>
-                    Help &amp; support
                   </button>
                   <div className="my-xs border-t border-outline-variant/30" />
                   <button

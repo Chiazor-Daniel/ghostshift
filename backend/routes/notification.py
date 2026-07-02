@@ -1,7 +1,7 @@
 """Notification routes — production ready."""
 import logging
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request, Depends
@@ -34,12 +34,13 @@ def _serialize(n: Notification) -> dict:
 
 
 def _nid() -> str:
-    return f"n_{int(datetime.utcnow().timestamp() * 1000)}_{secrets.token_hex(4)}"
+    return f"n_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}"
 
 
 @router.get("/")
 async def list_notifications(request: Request, unread_only: bool = False,
                               status_filter: Optional[str] = None,
+                              skip: int = 0, limit: int = 100,
                               db: Session = Depends(get_db)):
     user = await get_current_user(request, db)
     q = db.query(Notification).filter(
@@ -50,8 +51,15 @@ async def list_notifications(request: Request, unread_only: bool = False,
         q = q.filter(Notification.status == "unread")
     elif status_filter:
         q = q.filter(Notification.status == status_filter)
-    rows = q.order_by(Notification.created_at.desc()).limit(100).all()
-    return [_serialize(n) for n in rows]
+    skip = max(0, skip)
+    limit = max(1, min(limit, 200))
+    rows = q.order_by(Notification.created_at.desc()).offset(skip).limit(limit).all()
+    return {
+        "items": [_serialize(n) for n in rows],
+        "total": q.count(),
+        "skip": skip,
+        "limit": limit,
+    }
 
 
 @router.get("/{notification_id}")
@@ -79,8 +87,8 @@ async def mark_as_read(request: Request, notification_id: str, db: Session = Dep
     if not n:
         raise HTTPException(status_code=404, detail="Notification not found")
     n.status = "read"
-    n.read_at = datetime.utcnow()
-    n.updated_at = datetime.utcnow()
+    n.read_at = datetime.now(timezone.utc)
+    n.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(n)
     return _serialize(n)
@@ -94,7 +102,7 @@ async def mark_all_as_read(request: Request, db: Session = Depends(get_db)):
         Notification.user_id == user.id,
         Notification.status == "unread",
     ).all()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     for n in rows:
         n.status = "read"
         n.read_at = now
@@ -142,7 +150,7 @@ async def send_notification(request: Request, payload: dict, db: Session = Depen
             context=payload.get("context"),
             data=payload.get("data", {}),
             status="unread",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         db.add(n)
         sent.append(n)

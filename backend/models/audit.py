@@ -4,7 +4,7 @@ Audit Log Model - Track all system changes
 
 from sqlalchemy import Column, String, Integer, DateTime, Boolean, JSON, ForeignKey, Enum
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from config.database import Base
 import enum
 
@@ -38,7 +38,7 @@ class AuditLog(Base):
     new_values = Column(JSON, default=dict)
     ip_address = Column(String(50))
     user_agent = Column(String(500))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     organization = relationship("Organization")
