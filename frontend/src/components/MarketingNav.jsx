@@ -52,7 +52,7 @@ export default function MarketingNav() {
             <span className="material-symbols-outlined text-[20px]">{dark ? 'light_mode' : 'dark_mode'}</span>
           </button>
           <Link to="/login" className="btn-primary hidden sm:inline-flex px-md py-sm text-sm shadow-soft-sm">
-            Live Demo
+            Sign In
           </Link>
           <Link to="/signup" className="btn-ghost hidden sm:inline-flex">
             Sign up
@@ -82,7 +82,7 @@ export default function MarketingNav() {
           </div>
           <div className="flex items-center gap-2 pt-2 border-t border-outline-variant/20">
             <Link to="/login" onClick={() => setOpen(false)} className="btn-primary py-xs px-sm text-xs shadow-soft-sm">
-              Live Demo
+              Sign In
             </Link>
             <Link to="/signup" onClick={() => setOpen(false)} className="btn-ghost py-xs px-sm text-xs">
               Sign up

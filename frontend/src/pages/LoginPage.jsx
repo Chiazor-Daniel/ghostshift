@@ -147,7 +147,7 @@ export default function LoginPage() {
               <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
             </button>
 
-            <div className="pt-sm border-t border-outline-variant/20">
+            {/* <div className="pt-sm border-t border-outline-variant/20">
               <p className="font-label-sm text-label-sm text-on-surface-variant text-center mb-1">
                 Try the full demo — live data, AI assistant, ready to explore
               </p>
@@ -164,7 +164,7 @@ export default function LoginPage() {
                   Demo as Admin
                 </button>
               </div>
-            </div>
+            </div> */}
           </form>
 
           <p className="mt-lg text-center font-body-sm text-body-sm text-on-surface-variant">

@@ -218,7 +218,7 @@ export default function LandingPage() {
               className="mt-xl flex items-center gap-md"
             >
               <Link to="/login" className="btn-primary px-lg py-md text-base shadow-soft-lg border border-white/20">
-                Try the Live Demo
+                Sign In
               </Link>
               <Link
                 to="/signup"
@@ -227,9 +227,9 @@ export default function LandingPage() {
                 Create Account
               </Link>
             </motion.div>
-            <p className="mt-md font-label-sm text-label-sm text-white/60">
+            {/* <p className="mt-md font-label-sm text-label-sm text-white/60">
               Explore the full app with seeded data · No sign-up required
-            </p>
+            </p> */}
           </div>
         </div>
       </section>

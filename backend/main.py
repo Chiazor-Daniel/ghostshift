@@ -70,12 +70,12 @@ async def lifespan(app: FastAPI):
 
     # Seed demo data on first boot (idempotent — no-op if already seeded)
     # Set SEED_DEMO=false to skip in production environments with real data.
-    if os.getenv("SEED_DEMO", "true").lower() in ("1", "true", "yes"):
-        try:
-            import seed_demo
-            seed_demo.main()
-        except Exception as e:
-            logger.warning(f"Demo seed step skipped: {e}")
+    # if os.getenv("SEED_DEMO", "true").lower() in ("1", "true", "yes"):
+    #     try:
+    #         import seed_demo
+    #         seed_demo.main()
+    #     except Exception as e:
+    #         logger.warning(f"Demo seed step skipped: {e}")
 
     yield
 

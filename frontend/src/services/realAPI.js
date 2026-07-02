@@ -1,7 +1,7 @@
 // Real GhostShift API client — talks to the FastAPI backend.
 // Endpoints match backend route prefixes in /backend/routes/.
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
+const API_BASE_URL = 'https://ghostshift-v1-0-0.onrender.com/api'
 
 class RealAPI {
   constructor() {
@@ -40,7 +40,7 @@ class RealAPI {
     this.refreshToken = null
     this.user = null
     try {
-      ['gs_access_token','gs_refresh_token','gs_user','gs_role','gs_org_id']
+      ['gs_access_token', 'gs_refresh_token', 'gs_user', 'gs_role', 'gs_org_id']
         .forEach(k => localStorage.removeItem(k))
     } catch {
       // localStorage may be unavailable (private mode, quota, etc.) — never let this throw.
