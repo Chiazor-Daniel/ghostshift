@@ -94,6 +94,7 @@ class RealAPI {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.refreshToken}`,
         },
+        body: JSON.stringify({ refresh_token: this.refreshToken }),
       })
       if (!res.ok) return false
       const data = await res.json()
