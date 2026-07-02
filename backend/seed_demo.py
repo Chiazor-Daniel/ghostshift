@@ -435,11 +435,14 @@ def main():
     Base.metadata.create_all(engine)
     db = SessionLocal()
     try:
-        if already_exists(db):
-            print(f"Demo org {ORG_ID} already exists. Skipping seed.")
-            print("To re-seed, delete the org first (it cascades to all related rows).")
-            return
-
+        print("Cleaning up old demo data...")
+        # Delete by slug to avoid unique constraint errors
+        old_org = db.query(Organization).filter(Organization.slug.in_(["riverside-general", "riverside-general-2"])).first()
+        if old_org:
+            db.delete(old_org)
+            db.commit()
+            print("Wiped old demo data!")
+            
         print(f"Seeding demo org: Riverside General Hospital ({ORG_ID})")
         create_org(db)
         create_departments(db)
