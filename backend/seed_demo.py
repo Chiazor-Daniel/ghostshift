@@ -28,7 +28,7 @@ from models.swap import SwapRequest
 from models.leave import LeaveRequest
 from models.notification import Notification
 
-ORG_ID = "org_demo_riverside_001"
+ORG_ID = "org_demo_riverside_002"
 ADMIN_EMAIL = "demo.admin@riverside.health"
 EMP_EMAIL = "demo.employee@riverside.health"
 PASSWORD = "Demo1234!"
