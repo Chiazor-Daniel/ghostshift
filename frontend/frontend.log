@@ -1,0 +1,19 @@
+
+> ghostshift-frontend@1.0.0 dev
+> vite --host
+
+
+  VITE v5.4.21  ready in 140 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.1.29:5173/
+  ➜  Network: http://172.18.0.1:5173/
+11:26:46 PM [vite] hmr update /src/hooks/useAuth.jsx, /src/index.css, /src/App.jsx, /src/pages/OnboardingPage.jsx, /src/pages/MarketplacePage.jsx, /src/pages/EmployeePortal.jsx, /src/pages/SwapRequestsPage.jsx, /src/pages/AvailabilityPage.jsx, /src/pages/InsightsPage.jsx, /src/pages/EmployeesPage.jsx, /src/pages/AdminPage.jsx, /src/pages/NotificationsPage.jsx, /src/pages/AcceptInvitePage.jsx, /src/pages/LeaveRequestsPage.jsx, /src/pages/MySwapsPage.jsx, /src/pages/AttendancePage.jsx, /src/pages/ForgotPasswordPage.jsx, /src/pages/ManagerDashboard.jsx, /src/components/Sidebar.jsx, /src/components/ChatAssistant.jsx
+11:26:46 PM [vite] hmr update /src/components/MarketingNav.jsx, /src/index.css
+11:26:46 PM [vite] hmr update /src/pages/LandingPage.jsx, /src/index.css
+11:26:46 PM [vite] hmr update /src/pages/LoginPage.jsx, /src/index.css
+11:26:46 PM [vite] hmr update /src/components/ui.jsx, /src/index.css
+11:26:46 PM [vite] hmr update /src/index.css
+11:26:46 PM [vite] hmr update /src/pages/ForgotPasswordPage.jsx, /src/index.css
+11:26:47 PM [vite] hmr invalidate /src/hooks/useAuth.jsx Could not Fast Refresh ("useAuth" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+11:26:47 PM [vite] page reload src/hooks/useAuth.jsx

@@ -4,6 +4,7 @@ import Calendar from '../components/Calendar.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 import { formatDate, timeLabel, today } from '../data/store.js'
+import { isShiftOpen, isShiftUpcoming, needsCoverage } from '../lib/shiftUtils.js'
 import { motion } from 'framer-motion'
 
 const newShiftDefaults = () => ({
@@ -37,6 +38,9 @@ export default function ManagerDashboard() {
 
   useEffect(() => {
     refresh()
+    const onDataChanged = () => refresh()
+    window.addEventListener('gs:data-changed', onDataChanged)
+    return () => window.removeEventListener('gs:data-changed', onDataChanged)
   }, [])
 
   async function refresh() {
@@ -67,7 +71,7 @@ export default function ManagerDashboard() {
 
   const gaps = useMemo(() => {
     return filteredShifts
-      .filter((s) => s.status === 'open' || (s.required_staff || 1) > (s.assigned_staff || []).length)
+      .filter((s) => needsCoverage(s))
       .map((s) => {
         const required = s.required_staff || 1
         const assigned = (s.assigned_staff || []).length
@@ -77,10 +81,15 @@ export default function ManagerDashboard() {
       })
   }, [filteredShifts])
 
+  const openShiftCount = useMemo(
+    () => filteredShifts.filter((s) => isShiftOpen(s)).length,
+    [filteredShifts],
+  )
+
   const pendingSwaps = swaps.filter((s) => s.status === 'pending' && s.kind === 'swap')
   const pendingLeaves = leaves.filter((l) => l.status === 'pending')
   const upcomingShifts = filteredShifts
-    .filter((s) => s.date >= today().toISOString().slice(0, 10) && s.status !== 'open')
+    .filter((s) => isShiftUpcoming(s, today().toISOString().slice(0, 10)))
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 10)
 
@@ -179,7 +188,7 @@ export default function ManagerDashboard() {
 
         {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Open shifts" value={gaps.length.toString()} icon="event_available" />
+          <StatCard label="Open shifts" value={openShiftCount.toString()} icon="event_available" />
           <StatCard label="Swap requests" value={pendingSwaps.length.toString()} icon="swap_horiz" />
           <StatCard label="Leave requests" value={pendingLeaves.length.toString()} icon="event_busy" />
           <StatCard label="Active staff" value={employees.filter((e) => e.role !== 'admin').length.toString()} icon="groups" />

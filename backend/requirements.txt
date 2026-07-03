@@ -19,7 +19,6 @@ scikit-learn==1.6.0
 lightgbm==4.5.0
 openai==1.58.1
 mailtrap==2.0.1
-resend>=2.0.0
 psycopg2-binary==2.9.10
 websockets==14.1
 aiofiles==24.1.0

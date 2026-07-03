@@ -13,29 +13,29 @@ from utils.email import email_service
 
 
 async def test_email():
-    """Test sending an email with Resend"""
-    print("Testing Resend Email Integration...")
+    """Test sending an email with Mailtrap"""
+    print("Testing Mailtrap Email Integration...")
     print("=" * 50)
     
-    # Check if Resend is configured
-    if not os.getenv("RESEND_API_KEY"):
-        print("❌ Resend API key not configured")
-        print("Please check your .env file and ensure RESEND_API_KEY is set")
+    # Check if Mailtrap is configured
+    if not email_service.smtp_user or not email_service.smtp_password:
+        print("❌ Mailtrap SMTP credentials not configured")
+        print("Please check your .env file and ensure SMTP_USER and SMTP_PASSWORD are set")
         return
     
-    # Test email (Must be the email you registered on Resend with if domain is unverified)
+    # Test email
     to = "chiazordaniel317@gmail.com"
     subject = "Test Email from GhostShift"
-    body = "This is a test email to verify Resend integration is working!"
+    body = "This is a test email to verify Mailtrap integration is working!"
     html = """
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>Test Email</h2>
-        <p>This is a test email to verify Resend integration is working!</p>
+        <p>This is a test email to verify Mailtrap integration is working!</p>
         <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <p><strong>Status:</strong> Success</p>
             <p><strong>Recipient:</strong> chiazordaniel317@gmail.com</p>
         </div>
-        <p>If you see this email, your Resend API integration is working perfectly! 🎉</p>
+        <p>If you see this email in your Mailtrap inbox, the integration is working! 🎉</p>
     </div>
     """
     

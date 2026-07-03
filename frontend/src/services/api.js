@@ -1,7 +1,7 @@
 // API Service for GhostShift Backend
 // This service connects to the real backend API instead of localStorage
 
-const API_BASE_URL = 'https://ghostshift-v1-0-0.onrender.com/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
 class GhostShiftAPI {
   constructor() {

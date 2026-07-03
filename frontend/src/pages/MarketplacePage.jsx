@@ -6,6 +6,7 @@ import { Card, Badge, Drawer, EmptyState, Select, ListSkeleton, Pagination, Conf
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 import { formatDate, formatDateFull, timeLabel, today } from '../data/store.js'
+import { isShiftOpen } from '../lib/shiftUtils.js'
 
 const adminTabs = [
   { id: 'browse', label: 'Browse open shifts' },
@@ -49,13 +50,16 @@ export default function MarketplacePage() {
 
   useEffect(() => {
     refresh()
+    const onDataChanged = () => refresh()
+    window.addEventListener('gs:data-changed', onDataChanged)
+    return () => window.removeEventListener('gs:data-changed', onDataChanged)
   }, [])
 
   async function refresh() {
     setLoading(true)
     try {
       const [shifts, swaps] = await Promise.all([realAPI.getShifts(), realAPI.getSwaps()])
-      setOpenShifts((shifts || []).filter(s => s.status === 'open'))
+      setOpenShifts((shifts || []).filter((s) => isShiftOpen(s)))
       setRequests(swaps || [])
     } catch (err) {
       toast.push(err.message || 'Could not load shifts', { tone: 'error' })

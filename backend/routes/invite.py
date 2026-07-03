@@ -18,8 +18,6 @@ from config.database import get_db
 from middleware.auth import get_current_user, hash_password, verify_password
 from models.invite import Invite
 from models.user import User
-from models.organization import Organization
-from utils.email import email_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -148,28 +146,10 @@ async def create_invite(request: Request, payload: dict, db: Session = Depends(g
     db.commit()
     db.refresh(invite)
 
-    import os
-    frontend_url = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")[0]
-    full_invite_url = f"{frontend_url}/accept-invite/{token}"
-    invite_path = f"/accept-invite/{token}"
-    
-    try:
-        org = db.query(Organization).filter(Organization.id == user.org_id).first()
-        org_name = org.name if org else "GhostShift"
-        
-        await email_service.send_invitation(
-            to=email,
-            inviter_name=user.name,
-            org_name=org_name,
-            role=role,
-            invite_url=full_invite_url
-        )
-    except Exception as e:
-        logger.error(f"Failed to send invite email to {email}: {e}")
-
+    invite_url = f"/accept-invite/{token}"
     return {
         "invite": _serialize_invite(invite),
-        "invite_url": invite_path,
+        "invite_url": invite_url,
         "invite_token": token,
     }
 

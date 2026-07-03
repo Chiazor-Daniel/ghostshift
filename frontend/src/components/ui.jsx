@@ -77,12 +77,12 @@ export function StatCard({ label, value, change, changeType, icon, className = '
 
 export function Badge({ children, variant = 'neutral', className = '' }) {
   const variants = {
-    neutral: 'bg-surface-variant text-on-surface-variant border border-outline-variant/30',
-    primary: 'bg-primary/10 text-primary border border-primary/20',
-    success: 'bg-success/10 text-success border border-success/20',
-    warning: 'bg-warning/15 text-warning border border-warning/20',
-    error: 'bg-error/10 text-error border border-error/20',
-    info: 'bg-accent/10 text-accent border border-accent/20',
+    neutral: 'bg-surface-variant text-on-surface-variant',
+    primary: 'bg-primary/10 text-primary',
+    success: 'bg-success/10 text-success',
+    warning: 'bg-warning/15 text-warning',
+    error: 'bg-error/10 text-error',
+    info: 'bg-accent/10 text-accent',
   }
   return <span className={`chip ${variants[variant]} ${className}`}>{children}</span>
 }
@@ -526,7 +526,7 @@ export function RichListItem({ title, subtitle, status, statusIcon, icon, iconCo
   return (
     <div
       onClick={onClick}
-      className={`p-md rounded-xl border border-outline-variant/30 bg-surface/50 transition-all duration-300 ${onClick ? 'cursor-pointer hover:shadow-soft-md hover:-translate-y-0.5 hover:border-primary/40 hover:bg-surface' : ''} ${className}`}
+      className={`p-md rounded-xl border border-outline-variant/30 hover:border-primary/40 transition-colors ${onClick ? 'cursor-pointer' : ''} ${className}`}
     >
       <div className="flex items-start justify-between gap-md">
         <div className="flex items-start gap-md min-w-0">

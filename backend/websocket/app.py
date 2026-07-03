@@ -95,7 +95,7 @@ async def check_burnout_alerts():
             await asyncio.sleep(60)
 
 
-@router.websocket("/ws")
+@router.websocket("")
 async def websocket_endpoint(websocket: WebSocket, token: str = ""):
     """WebSocket endpoint for real-time features. Authenticates via JWT token query param."""
     # Authenticate: extract and verify JWT token

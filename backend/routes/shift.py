@@ -13,6 +13,7 @@ from config.database import get_db
 from middleware.auth import get_current_user
 from models.shift import Shift
 from models.user import User
+from utils.realtime import notify_org
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -440,4 +441,11 @@ async def check_out(request: Request, shift_id: str, payload: dict = None,
     shift.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(shift)
+    notify_org(
+        user.org_id,
+        "shift_update",
+        title="Shift completed",
+        body=f"{shift.title} marked complete",
+        data={"shift_id": shift.id, "status": "completed"},
+    )
     return _serialize(shift)

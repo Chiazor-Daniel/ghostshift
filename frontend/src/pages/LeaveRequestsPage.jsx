@@ -33,6 +33,9 @@ export default function LeaveRequestsPage() {
 
   useEffect(() => {
     refresh()
+    const onDataChanged = () => refresh()
+    window.addEventListener('gs:data-changed', onDataChanged)
+    return () => window.removeEventListener('gs:data-changed', onDataChanged)
   }, [isAdmin, currentUser?.id])
 
   async function refresh() {

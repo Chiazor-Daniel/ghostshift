@@ -648,13 +648,16 @@ Why is this batch safe to approve?"""
 
     def generate_executive_summary(self, data: Dict) -> Dict:
         """
-        Generate a narrative executive summary from analytics data.
-        Falls back to deterministic summary if LLM is unavailable.
+        Generate a short executive summary from real org analytics.
+        Uses org name/type and only cites metrics that exist in data.
         """
+        org_name = data.get("org_name") or "Your organization"
+        org_type = data.get("org_type")
         window_days = data.get("window_days", 14)
         coverage_rate = data.get("coverage_rate", 0)
         open_shifts = data.get("open_shifts", 0)
         total_shifts = data.get("total_shifts", 0)
+        filled_shifts = data.get("filled_shifts", 0)
         check_in_rate = data.get("check_in_rate", 0)
         completed_shifts = data.get("completed_shifts", 0)
         pending_swaps = data.get("pending_swaps", 0)
@@ -662,46 +665,84 @@ Why is this batch safe to approve?"""
         high_risk = data.get("high_risk", 0)
         total_employees = data.get("total_employees", 0)
         late_count = data.get("late_count", 0)
-        swap_approval_rate = data.get("swap_approval_rate", 0)
-        leave_approval_rate = data.get("leave_approval_rate", 0)
+        total_swaps = data.get("total_swaps", 0)
+        total_leaves = data.get("total_leaves", 0)
 
-        system_prompt = """You are GhostShift AI, an operations analyst. 
-Write a short executive summary (4-6 sentences) for a healthcare admin. The summary should cover the next 14-day window only.
-Mention coverage, attendance, risks, and any urgent decisions needed. Use plain language. Be specific with numbers. Be decisive but not alarmist."""
+        org_label = org_name
+        if org_type:
+            org_label = f"{org_name} ({org_type})"
 
-        user_prompt = f"""Current operations snapshot for the next {window_days} days:
-- {total_shifts} shifts scheduled, {open_shifts} still open ({coverage_rate}% coverage)
-- On-time check-in rate: {check_in_rate}% across {completed_shifts} completed shifts
-- Late check-ins: {late_count}
-- Pending swap requests: {pending_swaps}
-- Pending leave requests: {pending_leaves}
-- Swap approval rate: {swap_approval_rate}%
-- Leave approval rate: {leave_approval_rate}%
-- Employees at high burnout risk: {high_risk} out of {total_employees}
+        # No schedule data — return a factual one-liner, skip the LLM.
+        if total_shifts == 0:
+            if total_employees <= 1:
+                summary = (
+                    f"{org_name}: No shifts in the next {window_days} days yet. "
+                    "Add employees and schedule shifts to see insights here."
+                )
+            else:
+                summary = (
+                    f"{org_name}: No shifts scheduled in the next {window_days} days "
+                    f"({total_employees} team members on file)."
+                )
+            return {"success": True, "summary": summary, "model": "deterministic"}
 
-Write the executive summary. Keep it focused on the next two weeks."""
+        def _deterministic_summary() -> str:
+            parts = [f"{org_name}: {filled_shifts}/{total_shifts} shifts filled ({coverage_rate}%)"]
+            if open_shifts:
+                parts.append(f"{open_shifts} open")
+            if completed_shifts:
+                parts.append(f"{check_in_rate}% on-time check-ins ({late_count} late)")
+            actions = []
+            if pending_swaps:
+                actions.append(f"{pending_swaps} swap{'s' if pending_swaps != 1 else ''} pending")
+            if pending_leaves:
+                actions.append(f"{pending_leaves} leave{'s' if pending_leaves != 1 else ''} pending")
+            if actions:
+                parts.append("; ".join(actions) + " need review")
+            elif high_risk:
+                parts.append(f"{high_risk} at high burnout risk")
+            else:
+                parts.append("no urgent actions")
+            return ". ".join(parts) + "."
 
-        llm_text = self._call_llm(system_prompt, user_prompt, max_tokens=300)
+        industry_line = f"Industry/type: {org_type}." if org_type else "Do not assume healthcare or hospital context."
 
+        system_prompt = f"""You are GhostShift AI. Write exactly 1-2 short sentences for an admin at {org_label}.
+{industry_line}
+Rules:
+- Use only the numbers provided. Never invent metrics.
+- If completed_shifts is 0, do not mention attendance or check-in rates.
+- If total_swaps or total_leaves is 0, do not mention approval rates or processes.
+- No filler, no generic advice, no "ongoing monitoring" platitudes.
+- Lead with the org name."""
+
+        facts = [
+            f"Window: next {window_days} days",
+            f"Shifts: {filled_shifts}/{total_shifts} filled ({coverage_rate}%), {open_shifts} open",
+            f"Team size: {total_employees}",
+        ]
+        if completed_shifts:
+            facts.append(f"Attendance: {check_in_rate}% on-time, {late_count} late, {completed_shifts} completed shifts")
+        if total_swaps:
+            facts.append(f"Swaps: {pending_swaps} pending of {total_swaps} total")
+        elif pending_swaps:
+            facts.append(f"Swaps: {pending_swaps} pending")
+        if total_leaves:
+            facts.append(f"Leaves: {pending_leaves} pending of {total_leaves} total")
+        elif pending_leaves:
+            facts.append(f"Leaves: {pending_leaves} pending")
+        if high_risk:
+            facts.append(f"Burnout: {high_risk} high-risk of {total_employees}")
+
+        user_prompt = "Facts:\n" + "\n".join(f"- {f}" for f in facts) + "\n\nWrite 1-2 sentences."
+
+        llm_text = self._call_llm(system_prompt, user_prompt, max_tokens=120)
         if not llm_text:
-            parts = []
-            if coverage_rate >= 80:
-                parts.append(f"Over the next two weeks, {total_shifts - open_shifts} of {total_shifts} scheduled shifts are filled ({coverage_rate}% coverage).")
-            else:
-                parts.append(f"Coverage needs attention for the next two weeks: only {coverage_rate}% of {total_shifts} scheduled shifts are filled, leaving {open_shifts} open.")
-            if check_in_rate >= 80:
-                parts.append(f"Attendance is solid with an {check_in_rate}% on-time check-in rate across {completed_shifts} completed shifts.")
-            else:
-                parts.append(f"Attendance is below target: {check_in_rate}% on-time check-ins and {late_count} late arrivals.")
-            if pending_swaps or pending_leaves:
-                parts.append(f"Action needed: {pending_swaps} swap requests and {pending_leaves} leave requests are awaiting your decision.")
-            if high_risk:
-                parts.append(f"Burnout watch: {high_risk} of {total_employees} employees show elevated risk.")
-            llm_text = " ".join(parts)
+            llm_text = _deterministic_summary()
 
         return {
             "success": True,
-            "summary": llm_text,
+            "summary": llm_text.strip(),
             "model": self.model if self.client else "rule-based",
         }
 

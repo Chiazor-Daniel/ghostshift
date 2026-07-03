@@ -97,10 +97,10 @@
 
 @layer components {
   .card {
-    @apply bg-gradient-to-b from-surface to-surface-dim rounded-2xl shadow-soft-md border border-white/60 dark:border-white/5;
+    @apply bg-gradient-to-b from-surface to-surface-dim rounded-2xl shadow-soft-md;
   }
   .card-hover {
-    @apply transition-all duration-300 hover:shadow-soft-xl hover:-translate-y-1 hover:border-primary/30;
+    @apply transition-all duration-300 hover:shadow-soft-xl hover:-translate-y-0.5;
   }
   .card-border {
     @apply border border-outline-variant/60;
@@ -155,7 +155,7 @@
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-sm rounded-xl bg-gradient-to-b from-primary-500 to-primary-700 px-lg py-sm text-label-md font-semibold text-on-primary shadow-soft-md transition-all hover:from-primary-600 hover:to-primary-800 hover:shadow-lg hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+    @apply inline-flex items-center justify-center gap-sm rounded-xl bg-gradient-to-b from-primary-500 to-primary-700 px-lg py-sm text-label-md font-semibold text-on-primary shadow-soft-md transition-all hover:from-primary-600 hover:to-primary-800 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
   }
   .btn-secondary {
     @apply inline-flex items-center justify-center gap-sm rounded-xl border border-outline-variant/70 bg-surface px-lg py-sm text-label-md font-medium text-on-surface transition-all hover:bg-surface-container hover:border-outline active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;

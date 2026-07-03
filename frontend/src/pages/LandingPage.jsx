@@ -217,19 +217,19 @@ export default function LandingPage() {
               transition={{ delay: 0.3, duration: 0.6 }}
               className="mt-xl flex items-center gap-md"
             >
-              <Link to="/login" className="btn-primary px-lg py-md text-base shadow-soft-lg border border-white/20">
-                Sign In
+              <Link to="/signup" className="btn-primary px-lg py-md text-base">
+                Get started free
               </Link>
               <Link
-                to="/signup"
+                to="/login"
                 className="inline-flex items-center justify-center px-lg py-md text-base rounded-lg border border-white/40 text-white hover:bg-white/10 transition-colors"
               >
-                Create Account
+                Sign in
               </Link>
             </motion.div>
-            {/* <p className="mt-md font-label-sm text-label-sm text-white/60">
-              Explore the full app with seeded data · No sign-up required
-            </p> */}
+            <p className="mt-md font-label-sm text-label-sm text-white/60">
+              No credit card · Live in a day · Works for any shift-based team
+            </p>
           </div>
         </div>
       </section>
@@ -471,12 +471,12 @@ export default function LandingPage() {
             transition={{ delay: 0.3 }}
             className="mt-xl text-center"
           >
-            <Link to="/login" className="btn-primary px-xl py-md text-base inline-flex items-center gap-2 shadow-soft-lg">
+            <Link to="/signup" className="btn-primary px-xl py-md text-base inline-flex items-center gap-2">
               <span className="material-symbols-outlined text-[20px]">auto_awesome</span>
-              Test the AI in our Live Demo
+              Try the AI features free
             </Link>
             <p className="mt-md font-label-sm text-label-sm text-on-surface-variant">
-              No sign-up required · See the AI in action instantly
+              No credit card required · See AI in action from day one
             </p>
           </motion.div>
         </div>

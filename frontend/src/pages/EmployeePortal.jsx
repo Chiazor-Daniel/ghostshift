@@ -7,6 +7,7 @@ import { Card, CardHeader, Badge, Avatar, Drawer, EmptyState, ListSkeleton, Pagi
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 import { formatDate, formatDateFull, timeLabel, today } from '../data/store.js'
+import { isShiftCompleted, isShiftOpen, isShiftUpcoming, shiftBelongsToEmployee } from '../lib/shiftUtils.js'
 
 export default function EmployeePortal() {
   const toast = useToast()
@@ -37,6 +38,9 @@ export default function EmployeePortal() {
   useEffect(() => {
     if (!currentUser?.id) return
     refresh()
+    const onDataChanged = () => refresh()
+    window.addEventListener('gs:data-changed', onDataChanged)
+    return () => window.removeEventListener('gs:data-changed', onDataChanged)
   }, [currentUser?.id])
 
   async function refresh() {
@@ -49,7 +53,7 @@ export default function EmployeePortal() {
         realAPI.getBurnoutAnalytics(currentUser.id),
         realAPI.getLeaves({ mine_only: 'true' }),
       ])
-      const mine = (sh || []).filter((s) => (s.assigned_staff || []).includes(currentUser.id))
+      const mine = (sh || []).filter((s) => shiftBelongsToEmployee(s, currentUser.id))
       setMyShifts(mine)
       setOpenShifts(open || [])
       setMySwaps(swaps || [])
@@ -75,14 +79,11 @@ export default function EmployeePortal() {
   const rawUpcoming = useMemo(() => {
     const now = today().toISOString().slice(0, 10)
     return myShifts
-      .filter((s) => {
-        if (s.check_in_at && s.check_out_at) return false
-        return s.date >= now
-      })
+      .filter((s) => isShiftUpcoming(s, now))
       .sort((a, b) => a.date.localeCompare(b.date))
   }, [myShifts])
 
-  const nextShift = rawUpcoming.find((s) => !s.check_out_at) || rawUpcoming[0]
+  const nextShift = rawUpcoming.find((s) => !s.check_out_at && s.status !== 'completed') || rawUpcoming[0]
 
   const upcoming = useMemo(() => {
     return rawUpcoming
@@ -91,12 +92,8 @@ export default function EmployeePortal() {
   }, [rawUpcoming, pendingSwapShiftIds, nextShift])
 
   const completed = useMemo(() => {
-    const now = today().toISOString().slice(0, 10)
     return myShifts
-      .filter((s) => {
-        if (s.check_in_at && s.check_out_at) return true
-        return s.date < now
-      })
+      .filter((s) => isShiftCompleted(s))
       .sort((a, b) => b.date.localeCompare(a.date))
   }, [myShifts])
 
@@ -130,6 +127,25 @@ export default function EmployeePortal() {
     if (ageMs < 0 || ageMs > 24 * 60 * 60 * 1000) return false
     // Only show for shifts that haven't been touched by the employee (no check-in yet)
     return !shift.check_in_at
+  }
+
+  async function requestRelease(shift) {
+    if (requestInFlight) return
+    if (!confirm(`Request to be released from ${shift.role || shift.title} on ${formatDate(shift.date)}?`)) return
+    setRequestInFlight(true)
+    try {
+      await realAPI.createSwap({
+        from_shift_id: shift.id,
+        kind: 'release',
+        reason: `Release request for ${shift.role || shift.title} on ${formatDate(shift.date)}`,
+      })
+      toast.push('Release request submitted — pending admin approval', { tone: 'success', duration: 6000 })
+      refresh()
+    } catch (err) {
+      toast.push(err.message || 'Could not submit release request', { tone: 'error' })
+    } finally {
+      setRequestInFlight(false)
+    }
   }
 
   async function requestTrade(myShift, targetShift) {
@@ -247,7 +263,8 @@ export default function EmployeePortal() {
     setCheckOutId(shiftId)
     try {
       await realAPI.checkOutShift(shiftId)
-      toast.push('Checked out. Shift recorded.', { tone: 'success' })
+      toast.push('Checked out. Shift recorded.', { tone: 'success', duration: 6000 })
+      setShiftPhase('completed')
       await refresh()
       if (drawerShift?.id === shiftId) {
         setDrawerOpen(false)
@@ -460,6 +477,9 @@ export default function EmployeePortal() {
                           <>
                             <button onClick={() => openTradeModal(s)} disabled={requestInFlight} className="btn-ghost text-xs py-1.5 px-3 disabled:opacity-60">
                               Swap
+                            </button>
+                            <button onClick={() => requestRelease(s)} disabled={requestInFlight} className="btn-ghost text-xs py-1.5 px-3 disabled:opacity-60">
+                              Release
                             </button>
                           </>
                         )}

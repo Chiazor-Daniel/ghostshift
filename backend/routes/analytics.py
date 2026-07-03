@@ -13,11 +13,22 @@ from models.shift import Shift
 from models.leave import LeaveRequest
 from models.notification import Notification
 from models.swap import SwapRequest
+from models.organization import Organization
 from ai_ml.burnout import burnout_predictor
 from ai_ml.assistant import ai_assistant
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _org_context(db: Session, org_id: str) -> dict:
+    """Load organization identity for analytics narratives."""
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        return {"org_name": "Your organization", "org_type": None}
+    settings = org.settings or {}
+    org_type = settings.get("type") or org.description
+    return {"org_name": org.name, "org_type": org_type}
 
 
 def _employee_features(u: User, org_shifts) -> dict:
@@ -139,10 +150,13 @@ async def get_executive_summary_all_time(request: Request, db: Session = Depends
         "late_count": late_count,
         "pending_swaps": sum(1 for s in swaps if s.status == "pending"),
         "pending_leaves": sum(1 for l in leaves if l.status == "pending"),
+        "total_swaps": total_swaps,
+        "total_leaves": total_leaves,
         "swap_approval_rate": round((approved_swaps / total_swaps * 100), 1) if total_swaps else 0,
         "leave_approval_rate": round((approved_leaves / total_leaves * 100), 1) if total_leaves else 0,
         "high_risk": high_risk,
         "total_employees": len(users),
+        **_org_context(db, user.org_id),
     }
     return ai_assistant.generate_executive_summary(data)
 
@@ -340,10 +354,13 @@ async def get_executive_summary_window(request: Request, db: Session = Depends(g
         "late_count": late_count,
         "pending_swaps": sum(1 for s in swaps if s.status == "pending"),
         "pending_leaves": sum(1 for l in leaves if l.status == "pending"),
+        "total_swaps": total_swaps,
+        "total_leaves": total_leaves,
         "swap_approval_rate": round((approved_swaps / total_swaps * 100), 1) if total_swaps else 0,
         "leave_approval_rate": round((approved_leaves / total_leaves * 100), 1) if total_leaves else 0,
         "high_risk": high_risk,
         "total_employees": len(users),
         "window_days": 14,
+        **_org_context(db, user.org_id),
     }
     return ai_assistant.generate_executive_summary(data)

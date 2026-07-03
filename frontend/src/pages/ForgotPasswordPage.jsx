@@ -47,8 +47,11 @@ export default function ForgotPasswordPage() {
     setRequestLoading(true)
     try {
       const res = await realAPI.forgotPassword(email.trim().toLowerCase())
-      if (res && res.dev_token) {
+      if (res?.dev_token) {
         setDevToken(res.dev_token)
+        // Dev mode: skip email and go straight to reset form.
+        navigate(`/forgot-password?token=${encodeURIComponent(res.dev_token)}`, { replace: true })
+        return
       }
       setRequestSent(true)
     } catch (err) {
@@ -61,8 +64,8 @@ export default function ForgotPasswordPage() {
   async function handleReset(e) {
     e.preventDefault()
     setResetError('')
-    if (!newPassword || newPassword.length < 4) {
-      setResetError('Password must be at least 4 characters')
+    if (!newPassword || newPassword.length < 8) {
+      setResetError('Password must be at least 8 characters')
       return
     }
     if (newPassword !== confirmPassword) {
@@ -131,7 +134,7 @@ export default function ForgotPasswordPage() {
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       autoComplete="new-password"
-                      placeholder="At least 4 characters"
+                      placeholder="At least 8 characters"
                       className="input-base mt-xs"
                       required
                     />
@@ -203,7 +206,7 @@ export default function ForgotPasswordPage() {
                   </div>
                   {devToken && (
                     <div className="mt-md pt-sm border-t border-outline-variant/30">
-                      <Link to={`/forgot-password?token=${devToken}`} className="btn-primary w-full justify-center">
+                      <Link to={`/forgot-password?token=${encodeURIComponent(devToken)}`} className="btn-primary w-full justify-center">
                         Proceed to reset password
                       </Link>
                     </div>

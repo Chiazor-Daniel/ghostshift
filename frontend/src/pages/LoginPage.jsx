@@ -147,6 +147,7 @@ export default function LoginPage() {
               <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
             </button>
 
+            {/* Demo Login Options */}
             {/* <div className="pt-sm border-t border-outline-variant/20">
               <p className="font-label-sm text-label-sm text-on-surface-variant text-center mb-1">
                 Try the full demo — live data, AI assistant, ready to explore

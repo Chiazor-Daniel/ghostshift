@@ -1,7 +1,7 @@
 import Sidebar from '../components/Sidebar.jsx'
 import ChatAssistant from '../components/ChatAssistant.jsx'
 import { useState, useEffect, createContext, useContext, useMemo, useCallback } from 'react'
-import Logo from '../components/Logo.jsx'
+import { useRealtime } from '../hooks/useRealtime.jsx'
 
 export const MobileNavContext = createContext(null)
 export const UserContext = createContext(null)
@@ -37,6 +37,8 @@ export default function AppShell({ activeRole, setActiveRole, children }) {
     return {}
   }, [activeRole])
   const userValue = useMemo(() => ({ user: resolvedUser, activeRole }), [activeRole, resolvedUser])
+
+  useRealtime(resolvedUser?.id ? resolvedUser : null)
 
   return (
     <UserContext.Provider value={userValue}>

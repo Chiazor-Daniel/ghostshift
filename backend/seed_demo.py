@@ -28,7 +28,7 @@ from models.swap import SwapRequest
 from models.leave import LeaveRequest
 from models.notification import Notification
 
-ORG_ID = "org_demo_riverside_002"
+ORG_ID = "org_demo_riverside_001"
 ADMIN_EMAIL = "demo.admin@riverside.health"
 EMP_EMAIL = "demo.employee@riverside.health"
 PASSWORD = "Demo1234!"
@@ -435,14 +435,11 @@ def main():
     Base.metadata.create_all(engine)
     db = SessionLocal()
     try:
-        print("Cleaning up old demo data...")
-        # Delete by slug to avoid unique constraint errors
-        old_org = db.query(Organization).filter(Organization.slug.in_(["riverside-general", "riverside-general-2"])).first()
-        if old_org:
-            db.delete(old_org)
-            db.commit()
-            print("Wiped old demo data!")
-            
+        if already_exists(db):
+            print(f"Demo org {ORG_ID} already exists. Skipping seed.")
+            print("To re-seed, delete the org first (it cascades to all related rows).")
+            return
+
         print(f"Seeding demo org: Riverside General Hospital ({ORG_ID})")
         create_org(db)
         create_departments(db)
@@ -456,7 +453,6 @@ def main():
         print("=" * 60)
         print("✅ Demo org ready!")
         print("=" * 60)
-        
         admin_password = None
         employee_password = None
         for u in users.values():
@@ -464,7 +460,6 @@ def main():
                 admin_password = "Demo1234!"
             elif u.email == EMP_EMAIL:
                 employee_password = "Demo1234!"
-                
         print(f"  Admin   login: {ADMIN_EMAIL} / {admin_password or 'see output above'}")
         print(f"  Employee login: {EMP_EMAIL} / {employee_password or 'see output above'}")
         print()

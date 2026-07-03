@@ -1,7 +1,7 @@
 // Real GhostShift API client — talks to the FastAPI backend.
 // Endpoints match backend route prefixes in /backend/routes/.
 
-const API_BASE_URL = 'https://ghostshift-v1-0-0.onrender.com/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
 class RealAPI {
   constructor() {

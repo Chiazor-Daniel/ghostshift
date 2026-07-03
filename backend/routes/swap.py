@@ -17,7 +17,7 @@ from models.user import User
 from models.notification import Notification
 from routes.shift import _serialize as _serialize_shift
 from ai_ml.assistant import ai_assistant
-from utils.email import email_service
+from utils.realtime import notify_org
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -159,11 +159,15 @@ async def create_swap(request: Request, payload: CreateSwapRequest, db: Session 
     # For pickups of an open shift, the shift must be open.
     proposed_kind = payload.kind
     if proposed_kind == "release":
-        if user.id not in (shift.assigned_staff or []):
+        if user.id not in (shift.assigned_staff or []) and shift.employee_id != user.id:
             raise HTTPException(status_code=403, detail="You can only release shifts assigned to you")
     elif proposed_kind != "pickup":
-        if user.id not in (shift.assigned_staff or []):
+        if user.id not in (shift.assigned_staff or []) and shift.employee_id != user.id:
             raise HTTPException(status_code=403, detail="You can only swap shifts assigned to you")
+    else:
+        # Marketplace pickup — shift must still be open and unfilled.
+        if shift.status != "open":
+            raise HTTPException(status_code=400, detail="This shift is no longer open for pickup")
 
     # Calculate real AI match score
     requester = db.query(User).filter(User.id == requester_id).first()
@@ -232,19 +236,33 @@ async def create_swap(request: Request, payload: CreateSwapRequest, db: Session 
     db.add(swap)
     db.commit()
     db.refresh(swap)
-    
-    if target and 'target_user' in locals() and target_user:
-        try:
-            await email_service.send_swap_request(
-                to=target_user.email,
-                requester_name=requester.name if requester else "A colleague",
-                shift_title=shift.title or "Shift",
-                shift_date=shift.start_time.strftime("%b %d, %Y") if shift.start_time else "soon",
-                swap_details=payload.reason or "Please check the app for details."
-            )
-        except Exception as e:
-            logger.warning(f"Failed to send swap request email: {e}")
-            
+
+    # Notify admins in-app (and via WebSocket for live dashboards).
+    try:
+        admins = db.query(User).filter(User.org_id == user.org_id, User.role == "admin").all()
+        kind_label = {"pickup": "shift pickup", "release": "shift release", "swap": "shift swap"}.get(kind, "shift request")
+        for admin in admins:
+            db.add(Notification(
+                id=f"n_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}",
+                org_id=user.org_id,
+                user_id=admin.id,
+                type="swap_request",
+                title=f"New {kind_label} request",
+                body=f"{user.name} submitted a {kind_label} for {shift.title or 'a shift'}.",
+                status="unread",
+                created_at=datetime.now(timezone.utc),
+            ))
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to create swap notification: {e}")
+
+    notify_org(
+        user.org_id,
+        "swap_request",
+        title="New swap request",
+        body=f"{user.name} submitted a {kind} request",
+        data={"swap_id": swap.id, "kind": kind},
+    )
     return _serialize(swap)
 
 
@@ -582,6 +600,14 @@ async def _decision(swap_id: str, decision: str, request: Request, db: Session, 
         swap.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(swap)
+        event = "swap_approved" if decision == "approve" else "swap_rejected"
+        notify_org(
+            swap.org_id,
+            event,
+            title=f"Swap {decision}d",
+            body=f"A {swap.kind} request was {decision}d",
+            data={"swap_id": swap.id, "status": swap.status},
+        )
         return _serialize(swap)
     except HTTPException:
         db.rollback()
@@ -692,16 +718,8 @@ async def auto_fill(shift_id: str, request: Request, db: Session = Depends(get_d
         )
         db.add(note)
         db.commit()
-        
-        await email_service.send_shift_scheduled(
-            to=best.email,
-            shift_title=shift.title or "Shift",
-            shift_date=shift.start_time.strftime("%b %d, %Y") if shift.start_time else "soon",
-            shift_time=shift.start_time.strftime("%I:%M %p") if shift.start_time else "TBD",
-            location="GhostShift App"
-        )
     except Exception as e:
-        logger.warning(f"Failed to create auto-assign notification or email: {e}")
+        logger.warning(f"Failed to create auto-assign notification: {e}")
 
     return {
         "shift": _serialize_shift(shift),

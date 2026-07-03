@@ -29,6 +29,9 @@ export default function SwapRequestsPage() {
 
   useEffect(() => {
     refresh()
+    const onDataChanged = () => refresh()
+    window.addEventListener('gs:data-changed', onDataChanged)
+    return () => window.removeEventListener('gs:data-changed', onDataChanged)
   }, [])
 
   async function refresh() {
@@ -146,12 +149,14 @@ export default function SwapRequestsPage() {
 
   const pendingPickups = pending.filter((s) => s.kind === 'pickup')
   const pendingSwaps = pending.filter((s) => s.kind === 'swap')
+  const pendingReleases = pending.filter((s) => s.kind === 'release')
 
   useEffect(() => { setListPage(1) }, [activeTab])
 
   const tabItems =
     activeTab === 'pickups' ? pendingPickups :
-    activeTab === 'swaps' ? pendingSwaps : []
+    activeTab === 'swaps' ? pendingSwaps :
+    activeTab === 'releases' ? pendingReleases : []
   const safeCount = tabItems.filter((s) => (s.ai_score || s.match_score || 0) >= AUTO_APPROVE_THRESHOLD).length
   const reviewCount = tabItems.length - safeCount
 
@@ -186,6 +191,7 @@ export default function SwapRequestsPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <Stat label="Shift pickups" value={pendingPickups.length} icon="event_available" hint="Take an open shift" />
           <Stat label="Swap trades" value={pendingSwaps.length} icon="swap_horiz" hint="You take mine, I take yours" />
+          <Stat label="Releases" value={pendingReleases.length} icon="exit_to_app" hint="Employee wants off a shift" />
           <Stat label="Total pending" value={pending.length} icon="inbox" hint="Need your decision" />
         </div>
 
@@ -194,6 +200,7 @@ export default function SwapRequestsPage() {
           {[
             { id: 'pickups', label: 'Shift pickups', count: pendingPickups.length },
             { id: 'swaps', label: 'Swap trades', count: pendingSwaps.length },
+            { id: 'releases', label: 'Releases', count: pendingReleases.length },
             { id: 'history', label: 'History', count: decided.length },
           ].map((t) => (
             <button
@@ -231,6 +238,11 @@ export default function SwapRequestsPage() {
                 emptyIcon = 'swap_horiz'
                 emptyTitle = 'No swap trades'
                 emptyDesc = 'Employees will appear here when they request to trade shifts with someone.'
+              } else if (activeTab === 'releases') {
+                items = pendingReleases
+                emptyIcon = 'exit_to_app'
+                emptyTitle = 'No release requests'
+                emptyDesc = 'Employees will appear here when they ask to be removed from a shift.'
               } else {
                 items = decided
                 emptyIcon = 'check_circle'
@@ -256,9 +268,11 @@ export default function SwapRequestsPage() {
                     const target = employeeById(swap.target_employee_id || swap.responder_id)
                     const aiScore = swap.ai_score || swap.match_score || 0
                     const kindLabel =
-                      swap.kind === 'pickup' ? 'Shift pickup' : 'Shift swap'
+                      swap.kind === 'pickup' ? 'Shift pickup' :
+                      swap.kind === 'release' ? 'Shift release' : 'Shift swap'
                     const kindVariant =
-                      swap.kind === 'pickup' ? 'info' : 'neutral'
+                      swap.kind === 'pickup' ? 'info' :
+                      swap.kind === 'release' ? 'warning' : 'neutral'
                     return (
                       <motion.div key={swap.id} whileHover={{ y: -1 }}>
                         <Card hover>

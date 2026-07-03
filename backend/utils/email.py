@@ -46,36 +46,40 @@ class EmailService:
         html: Optional[str] = None,
         background_tasks: Optional[BackgroundTasks] = None
     ):
-        """Send email using Resend"""
-        import resend
+        """Send email using Mailtrap SMTP"""
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
         
-        resend_api_key = os.getenv("RESEND_API_KEY")
-        if not resend_api_key:
-            logger.warning("Resend API key not configured")
-            return {"status": "skipped", "message": "Resend API not configured"}
-            
-        resend.api_key = resend_api_key
+        if not self.smtp_user or not self.smtp_password:
+            logger.warning("Mailtrap SMTP credentials not configured")
+            return {"status": "skipped", "message": "Mailtrap SMTP not configured"}
         
         try:
-            # Note: For free Resend accounts without a verified domain,
-            # you must use onboarding@resend.dev as the sender and you can ONLY
-            # send emails to the email address you signed up to Resend with.
-            params = {
-                "from": "GhostShift <onboarding@resend.dev>",
-                "to": [to],
-                "subject": subject,
-                "text": body,
-            }
+            # Create message
             if html:
-                params["html"] = html
-                
-            email_response = resend.Emails.send(params)
-            logger.info(f"Email sent to {to} via Resend. Response: {email_response}")
+                msg = MIMEMultipart('alternative')
+                msg.attach(MIMEText(body, 'plain'))
+                msg.attach(MIMEText(html, 'html'))
+            else:
+                msg = MIMEText(body, 'plain')
+            
+            msg['Subject'] = subject
+            msg['From'] = self.from_email
+            msg['To'] = to
+            
+            # Send email via Mailtrap SMTP sandbox
+            with smtplib.SMTP('sandbox.smtp.mailtrap.io', 2525) as server:
+                server.starttls()
+                server.login(self.smtp_user, self.smtp_password)
+                server.sendmail(self.from_email, [to], msg.as_string())
+            
+            logger.info(f"Email sent to {to}")
             return {"status": "success", "message": f"Email sent to {to}"}
             
         except Exception as e:
-            logger.error(f"Error sending email to {to} via Resend: {e}")
-            return {"status": "error", "message": str(e)}
+            logger.error(f"Error sending email to {to}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
 
     async def send_shift_scheduled(
         self,
@@ -226,17 +230,6 @@ class EmailService:
         </div>
         """
         
-        await self.send_email(to, subject, body, html)
-
-    async def send_password_reset(
-        self,
-        to: str,
-        reset_url: str
-    ):
-        """Send password reset email"""
-        subject = "Reset your GhostShift password"
-        body = f"You requested a password reset for GhostShift.\n\nClick the link below to reset your password:\n{reset_url}\n\nIf you didn't request this, you can safely ignore this email."
-        html = f"<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'><h2>Password Reset</h2><p>You requested a password reset for your GhostShift account.</p><div style='text-align: center; margin: 30px 0;'><a href='{reset_url}' style='background: #007bff; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold;'>Reset Password</a></div><p>If you didn't request this, you can safely ignore this email.</p></div>"
         await self.send_email(to, subject, body, html)
 
 

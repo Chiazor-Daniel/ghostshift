@@ -55,6 +55,7 @@ export default function MySwapsPage() {
 
   const kindLabel = (s) => {
     if (s.kind === 'pickup') return 'Pickup request'
+    if (s.kind === 'release') return 'Release request'
     if (s.kind === 'swap') return 'Swap trade'
     return 'Request'
   }

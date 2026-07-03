@@ -12,8 +12,10 @@ from middleware.auth import get_current_user
 from models.leave import LeaveRequest
 from models.user import User
 from models.shift import Shift
+from models.notification import Notification
 from ai_ml.assistant import ai_assistant
 from routes.shift import _serialize as _serialize_shift
+from utils.realtime import notify_org
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -113,6 +115,31 @@ async def create_leave(request: Request, payload: dict, db: Session = Depends(ge
     db.add(leave)
     db.commit()
     db.refresh(leave)
+
+    try:
+        admins = db.query(User).filter(User.org_id == user.org_id, User.role == "admin").all()
+        for admin in admins:
+            db.add(Notification(
+                id=f"n_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}",
+                org_id=user.org_id,
+                user_id=admin.id,
+                type="leave_request",
+                title="New leave request",
+                body=f"{employee_name} requested {leave_type} leave ({duration_days} day{'s' if duration_days != 1 else ''}).",
+                status="unread",
+                created_at=datetime.now(timezone.utc),
+            ))
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to create leave notification: {e}")
+
+    notify_org(
+        user.org_id,
+        "leave_request",
+        title="New leave request",
+        body=f"{employee_name} requested leave",
+        data={"leave_id": leave.id},
+    )
     return _serialize(leave)
 
 
@@ -189,6 +216,30 @@ async def _decide(leave_id: str, decision: str, request: Request, db: Session):
     leave.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(leave)
+
+    try:
+        status_word = "approved" if decision == "approve" else "declined"
+        db.add(Notification(
+            id=f"n_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}",
+            org_id=leave.org_id,
+            user_id=leave.employee_id,
+            type=f"leave_{status_word}",
+            title=f"Leave request {status_word}",
+            body=f"Your {leave.type} leave ({leave.duration_days} day{'s' if leave.duration_days != 1 else ''}) was {status_word}.",
+            status="unread",
+            created_at=datetime.now(timezone.utc),
+        ))
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to create leave decision notification: {e}")
+
+    notify_org(
+        leave.org_id,
+        f"leave_{decision}d",
+        title=f"Leave {decision}d",
+        body=f"Leave request for {leave.employee_name} was {decision}d",
+        data={"leave_id": leave.id, "status": leave.status},
+    )
     return _serialize(leave)
 
 

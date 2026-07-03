@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { realAPI } from '../services/realAPI.js'
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
+const WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws'
 
 export function useWebSocket(userId) {
   const wsRef = useRef(null)
@@ -10,16 +11,15 @@ export function useWebSocket(userId) {
   const listenersRef = useRef(new Map())
 
   const connect = useCallback(() => {
-    if (!userId) return
+    if (!userId || !realAPI.token) return
 
     try {
-      const ws = new WebSocket(`${WS_URL}/${userId}`)
+      const url = `${WS_BASE}?token=${encodeURIComponent(realAPI.token)}`
+      const ws = new WebSocket(url)
       wsRef.current = ws
 
       ws.onopen = () => {
-        console.log('[WS] Connected')
         setConnected(true)
-        // Subscribe to org-wide channel for real-time updates
         ws.send(JSON.stringify({ action: 'subscribe', channel: 'org_updates' }))
       }
 
@@ -27,33 +27,30 @@ export function useWebSocket(userId) {
         try {
           const message = JSON.parse(event.data)
           setLastMessage(message)
-          
-          // Notify listeners
+
           const type = message.type
           if (listenersRef.current.has(type)) {
-            listenersRef.current.get(type).forEach(callback => callback(message))
+            listenersRef.current.get(type).forEach((callback) => callback(message))
           }
-          // Also notify wildcard listeners
           if (listenersRef.current.has('*')) {
-            listenersRef.current.get('*').forEach(callback => callback(message))
+            listenersRef.current.get('*').forEach((callback) => callback(message))
           }
         } catch (err) {
           console.error('[WS] Failed to parse message:', err)
         }
       }
 
-      ws.onerror = (error) => {
-        console.error('[WS] Error:', error)
+      ws.onerror = () => {
+        setConnected(false)
       }
 
       ws.onclose = () => {
-        console.log('[WS] Disconnected, reconnecting in 3s...')
         setConnected(false)
-        reconnectTimeoutRef.current = setTimeout(connect, 3000)
+        reconnectTimeoutRef.current = setTimeout(connect, 4000)
       }
     } catch (err) {
       console.error('[WS] Failed to connect:', err)
-      reconnectTimeoutRef.current = setTimeout(connect, 3000)
+      reconnectTimeoutRef.current = setTimeout(connect, 4000)
     }
   }, [userId])
 
@@ -69,7 +66,7 @@ export function useWebSocket(userId) {
   }, [])
 
   const send = useCallback((message) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(message))
     }
   }, [])
@@ -79,19 +76,17 @@ export function useWebSocket(userId) {
       listenersRef.current.set(eventType, new Set())
     }
     listenersRef.current.get(eventType).add(callback)
-    
+
     return () => {
       listenersRef.current.get(eventType)?.delete(callback)
     }
   }, [])
 
   useEffect(() => {
-    if (userId) {
+    if (userId && realAPI.token) {
       connect()
     }
-    return () => {
-      disconnect()
-    }
+    return () => disconnect()
   }, [userId, connect, disconnect])
 
   return {

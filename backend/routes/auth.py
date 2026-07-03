@@ -22,7 +22,6 @@ from middleware.auth import (
 from models.user import User
 from models.organization import Organization
 from models.invite import Invite
-from utils.email import email_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -350,12 +349,6 @@ async def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(
         reset_token = create_password_reset_token({"user_id": user.id})
         dev_token = reset_token
         logger.info(f"[DEV ONLY] Reset link for {user.email}: /reset-password?token={reset_token}")
-        
-        import os
-        frontend_url = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")[0]
-        reset_url = f"{frontend_url}/forgot-password?token={reset_token}"
-        await email_service.send_password_reset(to=user.email, reset_url=reset_url)
-        
     return {"message": "If the email exists, a reset link has been sent.", "dev_token": dev_token}
 
 
