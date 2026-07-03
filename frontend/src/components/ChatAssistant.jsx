@@ -130,24 +130,15 @@ export default function ChatAssistant() {
     setHistoryLoaded(true)
   }
 
-  function sanitizeText(text) {
-    if (!text) return ''
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;')
-  }
-
   function renderText(text) {
-    const safe = sanitizeText(text)
-    return safe.split('\n').map((line, i) => (
+    if (!text) return null
+    const lines = String(text).split('\n')
+    return lines.map((line, i) => (
       <span key={i}>
         {line.split(/\*\*(.*?)\*\*/g).map((part, j) =>
           j % 2 === 1 ? <strong key={j} className="font-bold text-on-surface">{part}</strong> : part
         )}
-        {i < safe.split('\n').length - 1 && <br />}
+        {i < lines.length - 1 && <br />}
       </span>
     ))
   }

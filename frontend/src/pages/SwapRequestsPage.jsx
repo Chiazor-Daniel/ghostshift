@@ -4,6 +4,7 @@ import { Card, CardHeader, Badge, Avatar, Drawer, EmptyState, ListSkeleton, Pagi
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 import { formatDate, formatDateFull, timeLabel } from '../data/store.js'
+import { useDebouncedRefresh } from '../hooks/useDebouncedRefresh.js'
 
 // Fit-score threshold for auto-approval. Requests with score >= this are flagged
 // "safe to auto-approve" because the requester matches the shift well.
@@ -29,13 +30,14 @@ export default function SwapRequestsPage() {
 
   useEffect(() => {
     refresh()
-    const onDataChanged = () => refresh()
-    window.addEventListener('gs:data-changed', onDataChanged)
-    return () => window.removeEventListener('gs:data-changed', onDataChanged)
   }, [])
 
-  async function refresh() {
-    setLoading(true)
+  useDebouncedRefresh(refresh)
+
+  async function refresh(opts = {}) {
+    const silent = opts?.silent === true
+    const hasData = swaps.length > 0
+    if (!silent && !hasData) setLoading(true)
     try {
       const [sw, sh, emps] = await Promise.all([
         realAPI.getSwaps(),
@@ -148,15 +150,14 @@ export default function SwapRequestsPage() {
   const decided = swaps.filter((s) => s.status !== 'pending')
 
   const pendingPickups = pending.filter((s) => s.kind === 'pickup')
-  const pendingSwaps = pending.filter((s) => s.kind === 'swap')
-  const pendingReleases = pending.filter((s) => s.kind === 'release')
+  const pendingSwaps = pending.filter((s) => s.kind === 'swap' || s.kind === 'release')
+  const pendingGiveUps = pending.filter((s) => s.kind === 'release')
 
   useEffect(() => { setListPage(1) }, [activeTab])
 
   const tabItems =
     activeTab === 'pickups' ? pendingPickups :
-    activeTab === 'swaps' ? pendingSwaps :
-    activeTab === 'releases' ? pendingReleases : []
+    activeTab === 'swaps' ? pendingSwaps : []
   const safeCount = tabItems.filter((s) => (s.ai_score || s.match_score || 0) >= AUTO_APPROVE_THRESHOLD).length
   const reviewCount = tabItems.length - safeCount
 
@@ -182,7 +183,7 @@ export default function SwapRequestsPage() {
       <div className="mb-6">
         <h1 className="font-display-sm font-bold text-on-surface">Swap Review</h1>
         <p className="font-body-md text-body-md text-on-surface-variant mt-1">
-          Approve or decline shift pickups and swap trades. AI ranks the best matches so you can decide faster.
+          Approve or decline shift pickups, swap trades, and give-up requests. AI ranks matches so you can decide faster.
         </p>
       </div>
 
@@ -190,8 +191,8 @@ export default function SwapRequestsPage() {
         {/* Top metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <Stat label="Shift pickups" value={pendingPickups.length} icon="event_available" hint="Take an open shift" />
-          <Stat label="Swap trades" value={pendingSwaps.length} icon="swap_horiz" hint="You take mine, I take yours" />
-          <Stat label="Releases" value={pendingReleases.length} icon="exit_to_app" hint="Employee wants off a shift" />
+          <Stat label="Swaps & give-ups" value={pendingSwaps.length} icon="swap_horiz" hint="Trades or giving a shift back" />
+          <Stat label="Give-ups" value={pendingGiveUps.length} icon="exit_to_app" hint="Shift returned to marketplace" />
           <Stat label="Total pending" value={pending.length} icon="inbox" hint="Need your decision" />
         </div>
 
@@ -199,8 +200,7 @@ export default function SwapRequestsPage() {
         <div className="flex items-center gap-1 border-b border-outline-variant/30 overflow-x-auto">
           {[
             { id: 'pickups', label: 'Shift pickups', count: pendingPickups.length },
-            { id: 'swaps', label: 'Swap trades', count: pendingSwaps.length },
-            { id: 'releases', label: 'Releases', count: pendingReleases.length },
+            { id: 'swaps', label: 'Swaps & give-ups', count: pendingSwaps.length },
             { id: 'history', label: 'History', count: decided.length },
           ].map((t) => (
             <button
@@ -236,13 +236,8 @@ export default function SwapRequestsPage() {
               } else if (activeTab === 'swaps') {
                 items = pendingSwaps
                 emptyIcon = 'swap_horiz'
-                emptyTitle = 'No swap trades'
-                emptyDesc = 'Employees will appear here when they request to trade shifts with someone.'
-              } else if (activeTab === 'releases') {
-                items = pendingReleases
-                emptyIcon = 'exit_to_app'
-                emptyTitle = 'No release requests'
-                emptyDesc = 'Employees will appear here when they ask to be removed from a shift.'
+                emptyTitle = 'No swap or give-up requests'
+                emptyDesc = 'Employees will appear here when they trade shifts or give a shift back to the marketplace.'
               } else {
                 items = decided
                 emptyIcon = 'check_circle'
@@ -269,7 +264,7 @@ export default function SwapRequestsPage() {
                     const aiScore = swap.ai_score || swap.match_score || 0
                     const kindLabel =
                       swap.kind === 'pickup' ? 'Shift pickup' :
-                      swap.kind === 'release' ? 'Shift release' : 'Shift swap'
+                      swap.kind === 'release' ? 'Give up shift' : 'Swap trade'
                     const kindVariant =
                       swap.kind === 'pickup' ? 'info' :
                       swap.kind === 'release' ? 'warning' : 'neutral'
@@ -293,6 +288,9 @@ export default function SwapRequestsPage() {
                                   )}
                                   {!target && swap.kind === 'pickup' && (
                                     <Badge variant="info">→ Open shift</Badge>
+                                  )}
+                                  {!target && swap.kind === 'release' && (
+                                    <Badge variant="warning">→ Marketplace</Badge>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-sm mt-0.5">
@@ -331,6 +329,19 @@ export default function SwapRequestsPage() {
                                   <div className="font-label-sm text-label-sm text-on-surface-variant">Open shift pickup</div>
                                 </div>
                               </>
+                            ) : swap.kind === 'release' ? (
+                              <div className="sm:col-span-2">
+                                <div className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Shift to give up</div>
+                                <div className="font-label-md text-label-md font-bold text-on-surface mt-1">
+                                  {fromShift?.role || fromShift?.title || '—'}
+                                </div>
+                                <div className="font-label-sm text-label-sm text-on-surface-variant">
+                                  {fromShift ? `${formatDate(fromShift.date)} · ${fromShift.department || ''}` : '—'}
+                                </div>
+                                <div className="font-label-sm text-label-sm text-on-surface-variant mt-2">
+                                  <b>{requester?.name || 'Unknown'}</b> will be removed; shift returns to the marketplace.
+                                </div>
+                              </div>
                             ) : (
                               <>
                                 <div>

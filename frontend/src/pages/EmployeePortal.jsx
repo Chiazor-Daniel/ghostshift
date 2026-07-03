@@ -8,6 +8,7 @@ import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 import { formatDate, formatDateFull, timeLabel, today } from '../data/store.js'
 import { isShiftCompleted, isShiftOpen, isShiftUpcoming, shiftBelongsToEmployee } from '../lib/shiftUtils.js'
+import { useDebouncedRefresh } from '../hooks/useDebouncedRefresh.js'
 
 export default function EmployeePortal() {
   const toast = useToast()
@@ -38,13 +39,14 @@ export default function EmployeePortal() {
   useEffect(() => {
     if (!currentUser?.id) return
     refresh()
-    const onDataChanged = () => refresh()
-    window.addEventListener('gs:data-changed', onDataChanged)
-    return () => window.removeEventListener('gs:data-changed', onDataChanged)
   }, [currentUser?.id])
 
-  async function refresh() {
-    setLoading(true)
+  useDebouncedRefresh(refresh)
+
+  async function refresh(opts = {}) {
+    const silent = opts?.silent === true
+    const hasData = myShifts.length > 0
+    if (!silent && !hasData) setLoading(true)
     try {
       const [sh, open, swaps, burn, lv] = await Promise.all([
         realAPI.getShifts(),
@@ -129,20 +131,24 @@ export default function EmployeePortal() {
     return !shift.check_in_at
   }
 
-  async function requestRelease(shift) {
+  async function requestGiveUp(shift) {
     if (requestInFlight) return
-    if (!confirm(`Request to be released from ${shift.role || shift.title} on ${formatDate(shift.date)}?`)) return
+    const note = swapReason.trim() || `Give up ${shift.role || shift.title} on ${formatDate(shift.date)}`
     setRequestInFlight(true)
     try {
       await realAPI.createSwap({
         from_shift_id: shift.id,
         kind: 'release',
-        reason: `Release request for ${shift.role || shift.title} on ${formatDate(shift.date)}`,
+        reason: note,
       })
-      toast.push('Release request submitted — pending admin approval', { tone: 'success', duration: 6000 })
+      toast.push('Give-up request submitted — pending admin approval', { tone: 'success', duration: 6000 })
+      setTradeModal(null)
+      setSelectedTradeShift(null)
+      setSwapReason('')
+      setConflictCheck(null)
       refresh()
     } catch (err) {
-      toast.push(err.message || 'Could not submit release request', { tone: 'error' })
+      toast.push(err.message || 'Could not submit give-up request', { tone: 'error' })
     } finally {
       setRequestInFlight(false)
     }
@@ -174,6 +180,7 @@ export default function EmployeePortal() {
 
   async function openTradeModal(shift) {
     setBusySuggestions(true)
+    setSuggestionsTab('pickups')
     setTradeModal({ shift, openShifts: [], peerShifts: [], suggestions: null })
     setSelectedTradeShift(null)
     setSwapReason('')
@@ -371,7 +378,7 @@ export default function EmployeePortal() {
                           <>
                             <button onClick={() => openTradeModal(nextShift)} disabled={requestInFlight} className="btn-secondary text-sm disabled:opacity-60">
                               <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
-                              Swap
+                              Swap / give up
                             </button>
                             <button
                               onClick={() => handleCheckIn(nextShift.id)}
@@ -476,10 +483,7 @@ export default function EmployeePortal() {
                         {shiftPhase === 'upcoming' && !s.check_in_at && !s.check_out_at && (
                           <>
                             <button onClick={() => openTradeModal(s)} disabled={requestInFlight} className="btn-ghost text-xs py-1.5 px-3 disabled:opacity-60">
-                              Swap
-                            </button>
-                            <button onClick={() => requestRelease(s)} disabled={requestInFlight} className="btn-ghost text-xs py-1.5 px-3 disabled:opacity-60">
-                              Release
+                              Swap / give up
                             </button>
                           </>
                         )}
@@ -506,12 +510,15 @@ export default function EmployeePortal() {
                     const swapStatusIcon =
                       sw.status === 'approved' ? 'check_circle' :
                         sw.status === 'rejected' || sw.status === 'declined' ? 'cancel' : 'hourglass_top'
+                    const swapKind =
+                      sw.kind === 'pickup' ? 'Pickup' :
+                      sw.kind === 'release' ? 'Give up' : 'Swap'
                     return (
                       <RichListItem
                         key={sw.id}
                         icon={swapStatusIcon}
                         iconColor={swapStatusVariant}
-                        title={sw.reason || 'Swap request'}
+                        title={`${swapKind}: ${sw.reason || 'Shift request'}`}
                         subtitle={`Submitted ${formatDate(sw.created_at)}`}
                         status={{ variant: swapStatusVariant, label: sw.status }}
                       />
@@ -624,7 +631,7 @@ export default function EmployeePortal() {
               )}
               {!drawerShift.check_in_at && !drawerShift.check_out_at && (
                 <button onClick={() => { if (requestInFlight) return; setDrawerOpen(false); openTradeModal(drawerShift) }} disabled={requestInFlight} className="btn-secondary justify-center disabled:opacity-60">
-                  <span className="material-symbols-outlined text-[18px]">swap_horiz</span> Swap
+                  <span className="material-symbols-outlined text-[18px]">swap_horiz</span> Swap / give up
                 </button>
               )}
             </div>
@@ -648,9 +655,9 @@ export default function EmployeePortal() {
           >
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="font-headline-md text-headline-md font-bold text-on-surface">Swap this shift</h3>
+                <h3 className="font-headline-md text-headline-md font-bold text-on-surface">Change this shift</h3>
                 <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">
-                  AI suggests open shifts you can pick up or coworkers you can trade with.
+                  Pick up an open shift, trade with a coworker, or give this shift back to the marketplace.
                 </p>
               </div>
               <button
@@ -677,10 +684,11 @@ export default function EmployeePortal() {
             </div>
 
             {/* Tabs */}
-            <div className="flex items-center gap-1 bg-surface-variant/60 p-1 rounded-xl mb-4 w-fit">
+            <div className="flex items-center gap-1 bg-surface-variant/60 p-1 rounded-xl mb-4 w-fit flex-wrap">
               {[
                 { id: 'pickups', label: `Open shifts${tradeModal.suggestions?.pickups ? ` (${tradeModal.suggestions.pickups.length})` : ''}` },
                 { id: 'peer', label: `Peer trades${tradeModal.suggestions?.peer_swaps ? ` (${tradeModal.suggestions.peer_swaps.length})` : ''}` },
+                { id: 'giveup', label: 'Give up shift' },
               ].map((t) => (
                 <button
                   key={t.id}
@@ -702,7 +710,35 @@ export default function EmployeePortal() {
               </div>
             )}
 
-            {!busySuggestions && (
+            {!busySuggestions && suggestionsTab === 'giveup' && (
+              <div className="flex-1 space-y-4">
+                <div className="p-4 rounded-xl bg-warning/5 border border-warning/20">
+                  <div className="flex items-start gap-3">
+                    <span className="material-symbols-outlined text-warning text-[22px]">exit_to_app</span>
+                    <div>
+                      <p className="font-label-md text-label-md font-bold text-on-surface">Give up this shift</p>
+                      <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">
+                        You&apos;ll be removed from this shift if your admin approves. The shift goes back to the
+                        marketplace for someone else to pick up. Use <strong>Absence requests</strong> for multi-day time off.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="giveup-reason" className="font-label-md text-label-md text-on-surface">Reason (optional)</label>
+                  <textarea
+                    id="giveup-reason"
+                    value={swapReason}
+                    onChange={(e) => setSwapReason(e.target.value)}
+                    placeholder="e.g. Appointment conflict, not feeling well for this shift…"
+                    rows={3}
+                    className="w-full rounded-xl border border-outline-variant/50 bg-surface p-3 text-body-sm font-body-sm text-on-surface placeholder:text-on-surface-variant/60 focus:border-primary focus:ring-2 focus:ring-primary/20 resize-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {!busySuggestions && suggestionsTab !== 'giveup' && (
               <>
                 <div className="flex-1 overflow-y-auto space-y-2 -mx-2 px-2">
                   {(suggestionsTab === 'pickups' ? tradeModal.openShifts : tradeModal.peerShifts).length === 0 ? (
@@ -826,13 +862,23 @@ export default function EmployeePortal() {
               >
                 Cancel
               </button>
-              <button
-                onClick={() => selectedTradeShift && requestTrade(tradeModal.shift, selectedTradeShift)}
-                disabled={!selectedTradeShift || requestInFlight || busySuggestions}
-                className="btn-primary text-sm disabled:opacity-60"
-              >
-                {requestInFlight ? 'Submitting…' : selectedTradeShift ? `Request ${suggestionsTab === 'peer' ? 'trade' : 'pickup'}` : 'Select a shift'}
-              </button>
+              {suggestionsTab === 'giveup' ? (
+                <button
+                  onClick={() => requestGiveUp(tradeModal.shift)}
+                  disabled={requestInFlight || busySuggestions}
+                  className="btn-primary text-sm disabled:opacity-60"
+                >
+                  {requestInFlight ? 'Submitting…' : 'Request give up'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => selectedTradeShift && requestTrade(tradeModal.shift, selectedTradeShift)}
+                  disabled={!selectedTradeShift || requestInFlight || busySuggestions}
+                  className="btn-primary text-sm disabled:opacity-60"
+                >
+                  {requestInFlight ? 'Submitting…' : selectedTradeShift ? `Request ${suggestionsTab === 'peer' ? 'trade' : 'pickup'}` : 'Select a shift'}
+                </button>
+              )}
             </div>
           </motion.div>
         </motion.div>

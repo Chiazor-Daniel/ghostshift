@@ -36,12 +36,16 @@ export default function InsightsPage() {
   const [leaves, setLeaves] = useState([])
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [summaryLoading, setSummaryLoading] = useState(false)
 
   useEffect(() => {
-    ;(async () => {
-      setLoading(true)
+    let cancelled = false
+
+    async function loadCore() {
+      const hasData = burnout !== null
+      if (!hasData) setLoading(true)
       try {
-        const [b, c, s, a, emps, sh, sw, lv, sum] = await Promise.all([
+        const [b, c, s, a, emps, sh, sw, lv] = await Promise.all([
           realAPI.getBurnoutAnalytics(),
           realAPI.getCoverageAnalytics(),
           realAPI.getStaffingAnalytics(),
@@ -50,8 +54,8 @@ export default function InsightsPage() {
           realAPI.getShifts(),
           realAPI.getSwaps(),
           realAPI.getLeaves(),
-          realAPI.getExecutiveSummary(),
         ])
+        if (cancelled) return
         setBurnout(b || { employees: [], high_risk: 0, moderate_risk: 0, low_risk: 0 })
         setCoverage(c || {})
         setStaffing(s || {})
@@ -60,13 +64,27 @@ export default function InsightsPage() {
         setShifts(sh || [])
         setSwaps(sw || [])
         setLeaves(lv || [])
-        setSummary(sum?.summary || null)
       } catch (err) {
-        toast.push(err.message || 'Could not load insights', { tone: 'error' })
+        if (!cancelled) toast.push(err.message || 'Could not load insights', { tone: 'error' })
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
-    })()
+    }
+
+    async function loadSummary() {
+      setSummaryLoading(true)
+      try {
+        const sum = await realAPI.getExecutiveSummary()
+        if (!cancelled) setSummary(sum?.summary || null)
+      } catch {
+        /* summary is optional — charts still work */
+      } finally {
+        if (!cancelled) setSummaryLoading(false)
+      }
+    }
+
+    loadCore().then(() => loadSummary())
+    return () => { cancelled = true }
   }, [])
 
   const allBurnout = burnout?.employees || []
@@ -189,26 +207,20 @@ export default function InsightsPage() {
         </p>
       </div>
       <section className="page-section">
-        {loading && <ListSkeleton variant="card" count={3} />}
+        {loading && !burnout && <ListSkeleton variant="card" count={3} />}
 
-        {!loading && (
+        {(!loading || burnout) && (
         <>
         {/* AI Executive Summary */}
-        {summary && (
-          <Card hover={false} className="border-primary/20 bg-gradient-to-r from-primary/5 via-accent/5 to-surface">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent text-on-primary flex items-center justify-center flex-shrink-0">
-                <span className="material-symbols-outlined text-[24px]">auto_awesome</span>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <h2 className="font-headline-md text-lg md:text-headline-lg font-bold text-on-surface">AI Executive Summary</h2>
-                  <Badge variant="primary">Live</Badge>
-                </div>
-                <p className="font-body-md text-body-md text-on-surface leading-relaxed">
-                  {summary}
-                </p>
-              </div>
+        {(summary || summaryLoading) && (
+          <Card hover={false} className="border-primary/20 bg-primary/5">
+            <CardHeader icon="auto_awesome" title="AI executive summary" />
+            <div className="mt-md">
+              {summaryLoading && !summary ? (
+                <p className="text-on-surface-variant text-sm animate-pulse">Generating summary…</p>
+              ) : (
+                <p className="font-body-md text-body-md text-on-surface leading-relaxed">{summary}</p>
+              )}
             </div>
           </Card>
         )}

@@ -57,6 +57,17 @@ async def lifespan(app: FastAPI):
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created/verified")
+        try:
+            with engine.connect() as conn:
+                conn.execute(__import__('sqlalchemy').text(
+                    "ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS shift_plan JSONB DEFAULT '{}'"
+                ))
+                conn.execute(__import__('sqlalchemy').text(
+                    "ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS returned_at TIMESTAMPTZ"
+                ))
+                conn.commit()
+        except Exception as col_err:
+            logger.debug(f"Leave column migration skipped: {col_err}")
     except Exception as e:
         logger.error(f"Error creating database tables: {e}")
 

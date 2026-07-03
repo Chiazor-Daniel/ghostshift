@@ -84,6 +84,9 @@ function SidebarContent({ user, activeRole, collapsed, onToggleCollapse, mobile,
   const toast = useToast()
   const { logout } = useAuth()
   const items = navItems.filter((n) => n.roles.includes(activeRole))
+  const settingsPath = activeRole === 'admin' ? '/app/admin' : '/app/profile'
+  const settingsLabel = activeRole === 'admin' ? 'Settings' : 'Profile'
+  const settingsIcon = activeRole === 'admin' ? 'settings' : 'person'
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
   const [unreadCount, setUnreadCount] = useState(0)
 
@@ -213,8 +216,9 @@ function SidebarContent({ user, activeRole, collapsed, onToggleCollapse, mobile,
       </button>
 
       <NavLink
-        to="/app/admin"
-        title={collapsed ? 'Settings' : undefined}
+        to={settingsPath}
+        onClick={onNavigate}
+        title={collapsed ? settingsLabel : undefined}
         className={({ isActive }) =>
           `relative flex items-center gap-sm rounded-xl transition-all duration-200 font-label-md text-label-md ${
             collapsed ? 'justify-center w-10 h-10 mx-auto' : 'px-md py-sm'
@@ -225,21 +229,34 @@ function SidebarContent({ user, activeRole, collapsed, onToggleCollapse, mobile,
           }`
         }
       >
-        <span className="material-symbols-outlined text-[20px] flex-shrink-0">settings</span>
-        {!collapsed && 'Settings'}
+        <span className="material-symbols-outlined text-[20px] flex-shrink-0">{settingsIcon}</span>
+        {!collapsed && settingsLabel}
       </NavLink>
 
       <div className="mt-1 pt-3 border-t border-outline-variant/30">
         <div className={`flex items-center gap-sm ${collapsed ? 'justify-center' : 'px-sm'}`}>
-          <Avatar
-            src={user.avatar}
-            initials={initialsFor(user.name)}
-            size="md"
-            className={collapsed ? '' : 'flex-shrink-0'}
-          />
+          <NavLink
+            to={settingsPath}
+            onClick={onNavigate}
+            title={settingsLabel}
+            className="flex-shrink-0 rounded-full hover:ring-2 hover:ring-primary/30 transition-all"
+          >
+            <Avatar
+              src={user.avatar}
+              initials={initialsFor(user.name)}
+              size="md"
+              className={collapsed ? '' : 'flex-shrink-0'}
+            />
+          </NavLink>
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <div className="font-label-md text-label-md text-on-surface truncate">{user.name}</div>
+              <NavLink
+                to={settingsPath}
+                onClick={onNavigate}
+                className="block font-label-md text-label-md text-on-surface truncate hover:text-primary transition-colors"
+              >
+                {user.name}
+              </NavLink>
               <div className="font-label-sm text-label-sm text-on-surface-variant truncate">{user.title}</div>
             </div>
           )}
@@ -251,19 +268,6 @@ function SidebarContent({ user, activeRole, collapsed, onToggleCollapse, mobile,
                 {activeRole}
               </span>
             </div>
-            <NavLink
-              to="/app/admin"
-              className={({ isActive }) =>
-                `flex items-center gap-sm rounded-lg px-2 py-1.5 text-label-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
-                }`
-              }
-            >
-              <span className="material-symbols-outlined text-[16px]">settings</span>
-              Profile & settings
-            </NavLink>
             <button
               onClick={() => { logout(); toast.push('Signed out', { tone: 'info' }); navigate('/login') }}
               className="w-full flex items-center justify-center gap-sm rounded-xl border border-error/30 py-1.5 text-label-sm font-medium text-error hover:bg-error/5 transition-all"

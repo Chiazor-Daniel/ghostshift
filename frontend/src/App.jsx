@@ -24,8 +24,9 @@ import LeaveRequestsPage from './pages/LeaveRequestsPage.jsx'
 import MySwapsPage from './pages/MySwapsPage.jsx'
 import AttendancePage from './pages/AttendancePage.jsx'
 import ForgotPasswordPage from './pages/ForgotPasswordPage.jsx'
+import ProfilePage from './pages/ProfilePage.jsx'
 function PageTransition({ children }) {
-  return <AnimatePresence mode="wait">{children}</AnimatePresence>
+  return <AnimatePresence>{children}</AnimatePresence>
 }
 
 function RoleHomeRedirect({ role }) {
@@ -83,6 +84,7 @@ export default function App() {
     insights: ['admin'],
     employees: ['admin'],
     admin: ['admin'],
+    profile: ['employee', 'admin'],
     notifications: ['employee', 'admin'],
     leaves: ['employee', 'admin'],
     attendance: ['admin'],
@@ -116,6 +118,7 @@ export default function App() {
                   <Route path="insights" element={<GuardedRoute roles={routeRoles.insights} activeRole={activeRole}><InsightsPage /></GuardedRoute>} />
                   <Route path="employees" element={<GuardedRoute roles={routeRoles.employees} activeRole={activeRole}><EmployeesPage /></GuardedRoute>} />
                   <Route path="admin" element={<GuardedRoute roles={routeRoles.admin} activeRole={activeRole}><AdminPage /></GuardedRoute>} />
+                  <Route path="profile" element={<GuardedRoute roles={routeRoles.profile} activeRole={activeRole}><ProfilePage /></GuardedRoute>} />
                   <Route path="notifications" element={<GuardedRoute roles={routeRoles.notifications} activeRole={activeRole}><NotificationsPage /></GuardedRoute>} />
                   <Route path="leaves" element={<GuardedRoute roles={routeRoles.leaves} activeRole={activeRole}><LeaveRequestsPage /></GuardedRoute>} />
                   <Route path="attendance" element={<GuardedRoute roles={routeRoles.attendance} activeRole={activeRole}><AttendancePage /></GuardedRoute>} />

@@ -321,7 +321,7 @@ export default function TopBar({ user, activeRole, title, subtitle, actions }) {
                   <button
                     onClick={() => {
                       setShowMenu(false)
-                      toast.push('Profile editing arrives with the backend release', { tone: 'info' })
+                      navigate('/app/profile')
                     }}
                     className="w-full text-left flex items-center gap-sm px-md py-sm text-on-surface hover:bg-surface-variant/60 transition-colors font-body-sm text-body-sm"
                   >

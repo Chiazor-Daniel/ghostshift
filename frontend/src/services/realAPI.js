@@ -1,6 +1,8 @@
 // Real GhostShift API client — talks to the FastAPI backend.
 // Endpoints match backend route prefixes in /backend/routes/.
 
+import { cacheGet, cacheSet, cacheInvalidate, cacheTtlForPath } from './dataCache.js'
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
 class RealAPI {
@@ -39,6 +41,7 @@ class RealAPI {
     this.token = null
     this.refreshToken = null
     this.user = null
+    cacheInvalidate()
     try {
       ['gs_access_token', 'gs_refresh_token', 'gs_user', 'gs_role', 'gs_org_id']
         .forEach(k => localStorage.removeItem(k))
@@ -48,6 +51,14 @@ class RealAPI {
   }
 
   async _request(path, options = {}) {
+    const method = (options.method || 'GET').toUpperCase()
+    const cacheKey = `${method}:${path}`
+
+    if (method === 'GET' && !options.skipCache) {
+      const cached = cacheGet(cacheKey)
+      if (cached !== undefined) return cached
+    }
+
     const url = `${this.baseURL}${path}`
     const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
     if (this.token) headers.Authorization = `Bearer ${this.token}`
@@ -83,7 +94,24 @@ class RealAPI {
       err.body = body
       throw err
     }
+
+    if (method === 'GET' && !options.skipCache) {
+      cacheSet(cacheKey, body, cacheTtlForPath(path))
+    } else if (method !== 'GET') {
+      this._invalidateCaches(path)
+    }
     return body
+  }
+
+  _invalidateCaches(path) {
+    if (path.includes('/shifts')) cacheInvalidate('GET:/shifts')
+    if (path.includes('/swaps')) cacheInvalidate('GET:/swaps')
+    if (path.includes('/leaves')) cacheInvalidate('GET:/leaves')
+    if (path.includes('/employees')) cacheInvalidate('GET:/employees')
+    if (path.includes('/notifications')) cacheInvalidate('GET:/notifications')
+    if (path.includes('/analytics')) cacheInvalidate('GET:/analytics')
+    if (path.includes('/organization')) cacheInvalidate('GET:/organization')
+    if (path.includes('/availability')) cacheInvalidate('GET:/availability')
   }
 
   async _refresh() {
@@ -200,8 +228,17 @@ class RealAPI {
     const res = await this._request(`/leaves/${q ? `?${q}` : ''}`)
     return res?.items || res || []
   }
+  async getLeaveActiveStatus() {
+    return this._request('/leaves/active-status', { skipCache: true })
+  }
+  async getLeaveShiftPlan(id) { return this._request(`/leaves/${id}/shift-plan`) }
   async createLeave(payload) { return this._request('/leaves/', { method: 'POST', body: JSON.stringify(payload) }) }
   async decideLeave(id, payload) { return this._request(`/leaves/${id}/decide`, { method: 'PUT', body: JSON.stringify(payload) }) }
+  async returnFromLeave(id) {
+    const res = await this._request(`/leaves/${id}/return`, { method: 'POST' })
+    this._invalidateCaches('/leaves')
+    return res
+  }
   async cancelLeave(id) { return this._request(`/leaves/${id}`, { method: 'DELETE' }) }
 
   // ── Availability ────────────────────────────────────────────

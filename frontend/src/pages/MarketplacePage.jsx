@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 import { formatDate, formatDateFull, timeLabel, today } from '../data/store.js'
 import { isShiftOpen } from '../lib/shiftUtils.js'
+import { useDebouncedRefresh } from '../hooks/useDebouncedRefresh.js'
 
 const adminTabs = [
   { id: 'browse', label: 'Browse open shifts' },
@@ -50,13 +51,14 @@ export default function MarketplacePage() {
 
   useEffect(() => {
     refresh()
-    const onDataChanged = () => refresh()
-    window.addEventListener('gs:data-changed', onDataChanged)
-    return () => window.removeEventListener('gs:data-changed', onDataChanged)
   }, [])
 
-  async function refresh() {
-    setLoading(true)
+  useDebouncedRefresh(refresh)
+
+  async function refresh(opts = {}) {
+    const silent = opts?.silent === true
+    const hasData = openShifts.length > 0 || requests.length > 0
+    if (!silent && !hasData) setLoading(true)
     try {
       const [shifts, swaps] = await Promise.all([realAPI.getShifts(), realAPI.getSwaps()])
       setOpenShifts((shifts || []).filter((s) => isShiftOpen(s)))

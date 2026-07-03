@@ -3,7 +3,8 @@ import { Card, CardHeader, Badge, Drawer, EmptyState, Select, ListSkeleton, Pagi
 import { useToast } from '../components/Toast.jsx'
 import { useUser } from '../layout/AppShell.jsx'
 import { realAPI } from '../services/realAPI.js'
-import { formatDate, today } from '../data/store.js'
+import { formatDate, formatDateFull, today } from '../data/store.js'
+import { useDebouncedRefresh } from '../hooks/useDebouncedRefresh.js'
 
 const leaveTypes = [
   { value: 'vacation', label: 'Vacation' },
@@ -30,17 +31,22 @@ export default function LeaveRequestsPage() {
   const [confirmLeave, setConfirmLeave] = useState(null)
   const [reasoning, setReasoning] = useState(null)
   const [busyReasoningId, setBusyReasoningId] = useState(null)
+  const [approvalModal, setApprovalModal] = useState(null)
+  const [shiftPlan, setShiftPlan] = useState(null)
+  const [planLoading, setPlanLoading] = useState(false)
+  const [approving, setApproving] = useState(false)
 
   useEffect(() => {
     refresh()
-    const onDataChanged = () => refresh()
-    window.addEventListener('gs:data-changed', onDataChanged)
-    return () => window.removeEventListener('gs:data-changed', onDataChanged)
   }, [isAdmin, currentUser?.id])
 
-  async function refresh() {
+  useDebouncedRefresh(refresh)
+
+  async function refresh(opts = {}) {
     if (!currentUser?.id) return
-    setLoading(true)
+    const silent = opts?.silent === true
+    const hasData = leaves.length > 0
+    if (!silent && !hasData) setLoading(true)
     try {
       const params = isAdmin ? {} : { mine_only: 'true' }
       const data = await realAPI.getLeaves(params)
@@ -92,7 +98,87 @@ export default function LeaveRequestsPage() {
   }
 
   function handleDecide(id, status) {
-    setConfirmLeave({ id, status, action: status === 'approved' ? 'approve' : 'reject' })
+    if (status === 'approved') {
+      const lv = leaves.find((l) => l.id === id)
+      if (lv) openApprovalModal(lv)
+      return
+    }
+    setConfirmLeave({ id, status, action: 'reject' })
+  }
+
+  async function openApprovalModal(lv) {
+    setApprovalModal(lv)
+    setShiftPlan(null)
+    setPlanLoading(true)
+    try {
+      const plan = await realAPI.getLeaveShiftPlan(lv.id)
+      setShiftPlan({
+        ...plan,
+        items: (plan.items || []).map((item) => ({ ...item })),
+      })
+    } catch (err) {
+      toast.push(err.message || 'Could not load shift coverage plan', { tone: 'error' })
+      setApprovalModal(null)
+    } finally {
+      setPlanLoading(false)
+    }
+  }
+
+  function closeApprovalModal() {
+    if (approving) return
+    setApprovalModal(null)
+    setShiftPlan(null)
+  }
+
+  function updatePlanItem(shiftId, patch) {
+    setShiftPlan((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        items: prev.items.map((item) => {
+          if (item.shift_id !== shiftId) return item
+          const next = { ...item, ...patch }
+          if (patch.action === 'marketplace') {
+            next.assignee_id = null
+            next.assignee_name = null
+            next.reason = 'Post to shift marketplace'
+          } else if (patch.assignee_id) {
+            const cand = (prev.candidates || []).find((c) => c.id === patch.assignee_id)
+            next.assignee_name = cand?.name || next.assignee_name
+            next.reason = cand ? `Assign to ${cand.name}` : next.reason
+          }
+          return next
+        }),
+      }
+    })
+  }
+
+  async function confirmApproval() {
+    if (!approvalModal || approving) return
+    setApproving(true)
+    setBusyLeaveId(approvalModal.id)
+    setBusyLeaveAction('approve')
+    try {
+      const payload = { status: 'approved' }
+      if (shiftPlan?.items?.length) {
+        payload.shift_plan = shiftPlan.items.map((item) => ({
+          shift_id: item.shift_id,
+          action: item.action,
+          assignee_id: item.action === 'assign' ? item.assignee_id : null,
+        }))
+      }
+      await realAPI.decideLeave(approvalModal.id, payload)
+      toast.push('Absence approved — shifts redistributed', { tone: 'success', duration: 5000 })
+      setApprovalModal(null)
+      setShiftPlan(null)
+      refresh()
+    } catch (err) {
+      toast.push(err.message || 'Could not approve absence request', { tone: 'error' })
+    } finally {
+      setApproving(false)
+      setBusyLeaveId(null)
+      setBusyLeaveAction(null)
+    }
   }
 
   function handleCancel(id) {
@@ -239,11 +325,116 @@ export default function LeaveRequestsPage() {
         open={!!confirmLeave}
         onClose={() => setConfirmLeave(null)}
         onConfirm={executeLeaveAction}
-        title={confirmLeave?.action === 'approve' ? 'Approve absence?' : confirmLeave?.action === 'cancel' ? 'Cancel request?' : 'Decline request?'}
-        message={confirmLeave?.action === 'approve' ? 'Approve this absence request?' : confirmLeave?.action === 'cancel' ? 'Cancel your absence request?' : 'Decline this absence request?'}
-        confirmLabel={confirmLeave?.action === 'approve' ? 'Approve' : confirmLeave?.action === 'cancel' ? 'Cancel' : 'Decline'}
-        tone={confirmLeave?.action === 'approve' ? 'primary' : 'danger'}
+        title={confirmLeave?.action === 'cancel' ? 'Cancel request?' : 'Decline request?'}
+        message={confirmLeave?.action === 'cancel' ? 'Cancel your absence request?' : 'Decline this absence request?'}
+        confirmLabel={confirmLeave?.action === 'cancel' ? 'Cancel' : 'Decline'}
+        tone="danger"
       />
+
+      {/* Shift coverage plan — required before approval */}
+      <Modal open={!!approvalModal} onClose={closeApprovalModal} title="Approve absence" size="lg">
+        {approvalModal && (
+          <div className="space-y-md">
+            <div className="p-md rounded-xl bg-surface-variant/40 border border-outline-variant/30">
+              <p className="font-semibold text-on-surface">{approvalModal.employee_name}</p>
+              <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
+                {formatDateFull(approvalModal.start_date)} → {formatDateFull(approvalModal.end_date)}
+                {' · '}{approvalModal.duration_days} day{approvalModal.duration_days === 1 ? '' : 's'}
+              </p>
+            </div>
+
+            {planLoading ? (
+              <div className="py-lg"><ListSkeleton variant="row" count={3} /></div>
+            ) : shiftPlan ? (
+              <>
+                <div className="p-md rounded-xl bg-primary/5 border border-primary/20">
+                  <div className="flex items-start gap-sm">
+                    <span className="material-symbols-outlined text-primary text-[22px]">auto_awesome</span>
+                    <div>
+                      <p className="font-label-sm text-label-sm font-semibold text-on-surface">AI shift coverage plan</p>
+                      <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">{shiftPlan.summary}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {shiftPlan.items?.length > 0 ? (
+                  <div className="space-y-sm max-h-[340px] overflow-y-auto pr-1">
+                    {shiftPlan.items.map((item) => (
+                      <div key={item.shift_id} className="p-md rounded-xl border border-outline-variant/40 bg-surface">
+                        <div className="flex flex-wrap items-start justify-between gap-sm">
+                          <div>
+                            <p className="font-semibold text-on-surface">{item.title || 'Shift'}</p>
+                            <p className="font-body-sm text-body-sm text-on-surface-variant">
+                              {formatDateFull(item.date)}
+                              {item.start_hour != null ? ` · ${item.start_hour}:00` : ''}
+                              {item.department ? ` · ${item.department}` : ''}
+                            </p>
+                            <p className="font-label-sm text-label-sm text-primary mt-1">{item.reason}</p>
+                          </div>
+                          {item.ai_score > 0 && (
+                            <Badge variant={item.ai_score >= 60 ? 'success' : 'warning'}>
+                              Fit {item.ai_score}%
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-sm mt-md">
+                          <div>
+                            <label className="font-label-sm text-label-sm text-on-surface-variant">Action</label>
+                            <Select
+                              value={item.action}
+                              onChange={(v) => updatePlanItem(item.shift_id, { action: v })}
+                              options={[
+                                { value: 'assign', label: 'Assign to teammate' },
+                                { value: 'marketplace', label: 'Post to marketplace' },
+                              ]}
+                              className="w-full mt-xs"
+                            />
+                          </div>
+                          {item.action === 'assign' && (
+                            <div>
+                              <label className="font-label-sm text-label-sm text-on-surface-variant">Teammate</label>
+                              <Select
+                                value={item.assignee_id || ''}
+                                onChange={(v) => updatePlanItem(item.shift_id, { action: 'assign', assignee_id: v })}
+                                options={[
+                                  { value: '', label: 'Select teammate…' },
+                                  ...(shiftPlan.candidates || []).map((c) => ({
+                                    value: c.id,
+                                    label: `${c.name}${c.department ? ` · ${c.department}` : ''}`,
+                                  })),
+                                ]}
+                                className="w-full mt-xs"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="font-body-sm text-body-sm text-on-surface-variant text-center py-md">
+                    No shifts fall within this absence window — you can approve directly.
+                  </p>
+                )}
+
+                <div className="flex items-center justify-end gap-sm pt-sm border-t border-outline-variant/30">
+                  <button type="button" onClick={closeApprovalModal} disabled={approving} className="btn-ghost disabled:opacity-60">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmApproval}
+                    disabled={approving || (shiftPlan.items?.some((i) => i.action === 'assign' && !i.assignee_id))}
+                    className="btn-primary disabled:opacity-60"
+                  >
+                    {approving ? 'Approving…' : 'Approve & apply plan'}
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        )}
+      </Modal>
 
       {/* AI reasoning modal for leave */}
       <Modal open={!!reasoning} onClose={() => setReasoning(null)} title="AI reasoning" size="md">

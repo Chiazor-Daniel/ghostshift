@@ -5,6 +5,7 @@ import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 import { formatDate, timeLabel, today } from '../data/store.js'
 import { isShiftOpen, isShiftUpcoming, needsCoverage } from '../lib/shiftUtils.js'
+import { useDebouncedRefresh } from '../hooks/useDebouncedRefresh.js'
 import { motion } from 'framer-motion'
 
 const newShiftDefaults = () => ({
@@ -38,13 +39,14 @@ export default function ManagerDashboard() {
 
   useEffect(() => {
     refresh()
-    const onDataChanged = () => refresh()
-    window.addEventListener('gs:data-changed', onDataChanged)
-    return () => window.removeEventListener('gs:data-changed', onDataChanged)
   }, [])
 
-  async function refresh() {
-    setLoading(true)
+  useDebouncedRefresh(refresh)
+
+  async function refresh(opts = {}) {
+    const silent = opts?.silent === true
+    const hasData = shifts.length > 0
+    if (!silent && !hasData) setLoading(true)
     try {
       const [sh, sw, emps, dp, lv] = await Promise.all([
         realAPI.getShifts(),
@@ -184,7 +186,7 @@ export default function ManagerDashboard() {
       </div>
 
       <section className="page-section space-y-md">
-        {loading && <ListSkeleton variant="card" count={3} />}
+        {loading && shifts.length === 0 && <ListSkeleton variant="card" count={3} />}
 
         {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -47,6 +47,8 @@ class LeaveRequest(Base):
     employee_name = Column(String(255))
     approved_at = Column(DateTime(timezone=True))
     rejected_at = Column(DateTime(timezone=True))
+    shift_plan = Column(JSON, default=dict)
+    returned_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

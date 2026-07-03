@@ -3,9 +3,19 @@ import { useWebSocket } from './useWebSocket.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
 
+let _lastDataBump = 0
+
+function bumpDataChanged(detail) {
+  const now = Date.now()
+  // Coalesce bursts — max one global refresh wave every 2s.
+  if (now - _lastDataBump < 2000) return
+  _lastDataBump = now
+  window.dispatchEvent(new CustomEvent('gs:data-changed', { detail }))
+}
+
 /**
  * Polls notifications + listens on WebSocket for live updates.
- * Dispatches `gs:data-changed` so pages can refresh without full reload.
+ * Dispatches debounced gs:data-changed so pages don't refetch in a storm.
  */
 export function useRealtime(user) {
   const toast = useToast()
@@ -22,24 +32,23 @@ export function useRealtime(user) {
         for (const n of notifs || []) {
           if (seenIds.current.has(n.id)) continue
           seenIds.current.add(n.id)
-          // Only toast notifications that arrive after initial load.
           if (bootstrapped.current && n.status !== 'read') {
             toast.push(n.body || n.title || 'New notification', {
               tone: 'info',
               duration: 6500,
               title: n.title && n.body ? n.title : undefined,
             })
-            window.dispatchEvent(new CustomEvent('gs:data-changed', { detail: { type: 'notification', id: n.id } }))
+            bumpDataChanged({ type: 'notification', id: n.id })
           }
         }
         bootstrapped.current = true
       } catch {
-        /* ignore transient network errors */
+        /* ignore */
       }
     }
 
     pollNotifications()
-    const interval = setInterval(pollNotifications, 25000)
+    const interval = setInterval(pollNotifications, 60_000)
     return () => clearInterval(interval)
   }, [user?.id, toast])
 
@@ -55,23 +64,11 @@ export function useRealtime(user) {
           title: msg.title && msg.body ? msg.title : undefined,
         })
       }
-      window.dispatchEvent(new CustomEvent('gs:data-changed', { detail: msg }))
+      bumpDataChanged(msg)
     })
 
     return unsub
   }, [user?.id, subscribe, toast])
-
-  // Refresh data when user returns to the tab.
-  useEffect(() => {
-    const bump = () => window.dispatchEvent(new CustomEvent('gs:data-changed'))
-    const onVis = () => { if (document.visibilityState === 'visible') bump() }
-    window.addEventListener('focus', bump)
-    document.addEventListener('visibilitychange', onVis)
-    return () => {
-      window.removeEventListener('focus', bump)
-      document.removeEventListener('visibilitychange', onVis)
-    }
-  }, [])
 
   return { connected }
 }

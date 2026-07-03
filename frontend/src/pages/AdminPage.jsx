@@ -3,11 +3,11 @@ import { useState, useEffect } from 'react'
 import { Card, CardHeader, Badge, EmptyState, ListSkeleton } from '../components/ui.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { realAPI } from '../services/realAPI.js'
+import ProfilePasswordForm from '../components/ProfilePasswordForm.jsx'
 
 const sections = [
   { id: 'org', label: 'Organization', icon: 'corporate_fare' },
   { id: 'profile', label: 'Profile & Password', icon: 'person' },
-  { id: 'policies', label: 'Policies', icon: 'gavel' },
   { id: 'audit', label: 'Audit Log', icon: 'history' },
 ]
 
@@ -51,8 +51,7 @@ export default function AdminPage() {
                 <OrgSection />
               </>
             )}
-            {activeSection === 'profile' && <ProfilePasswordSection />}
-            {activeSection === 'policies' && <PoliciesSection />}
+            {activeSection === 'profile' && <ProfilePasswordForm />}
             {activeSection === 'audit' && <AuditSection />}
           </div>
         </div>
@@ -223,143 +222,6 @@ function OrgSection() {
               })}
             </div>
           )}
-        </div>
-      </Card>
-    </>
-  )
-}
-
-function ProfilePasswordSection() {
-  const toast = useToast()
-  const [current, setCurrent] = useState('')
-  const [newPass, setNewPass] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  async function submit(e) {
-    e.preventDefault()
-    if (newPass.length < 8) {
-      toast.push('New password must be at least 8 characters', { tone: 'warning' })
-      return
-    }
-    if (newPass !== confirm) {
-      toast.push('Passwords do not match', { tone: 'warning' })
-      return
-    }
-    setBusy(true)
-    try {
-      await realAPI.changePassword(current, newPass)
-      setCurrent('')
-      setNewPass('')
-      setConfirm('')
-      toast.push('Password updated', { tone: 'success' })
-    } catch (err) {
-      toast.push(err.message || 'Could not update password', { tone: 'error' })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <>
-      <SectionHeader
-        title="Profile & password"
-        description="Update your account password"
-      />
-      <Card hover={false}>
-        <form onSubmit={submit} className="space-y-md max-w-md">
-          <div>
-            <label className="font-label-sm text-label-sm text-on-surface-variant">Current password</label>
-            <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} className="input-base w-full mt-xs" required />
-          </div>
-          <div>
-            <label className="font-label-sm text-label-sm text-on-surface-variant">New password</label>
-            <input type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} className="input-base w-full mt-xs" required minLength={8} />
-          </div>
-          <div>
-            <label className="font-label-sm text-label-sm text-on-surface-variant">Confirm new password</label>
-            <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="input-base w-full mt-xs" required minLength={8} />
-          </div>
-          <button type="submit" disabled={busy} className="btn-primary disabled:opacity-60">
-            {busy ? 'Updating…' : 'Update password'}
-          </button>
-        </form>
-      </Card>
-    </>
-  )
-}
-
-function PoliciesSection() {
-  const toast = useToast()
-  const [policies, setPolicies] = useState({
-    maxConsecutiveDays: 6,
-    minRestGap: 10,
-    maxWeeklyHours: 60,
-    swapApprovalWindow: 24,
-  })
-
-  function save(key, value) {
-    setPolicies((p) => ({ ...p, [key]: value }))
-    try { realAPI.logAudit({ action: 'update_policy', entity_type: 'policy', new_values: { [key]: value } }) } catch {}
-    toast.push(`${key} updated to ${value}`, { tone: 'success' })
-  }
-
-  return (
-    <>
-      <SectionHeader
-        title="Scheduling policies"
-        description="Rules that govern swaps, overtime, and time off"
-      />
-      <Card hover={false}>
-        <div className="space-y-md">
-          <Policy
-            title="Maximum consecutive days"
-            value={policies.maxConsecutiveDays}
-            desc="Auto-block schedule patterns that exceed this"
-            onChange={(v) => save('maxConsecutiveDays', Number(v))}
-          />
-          <Policy
-            title="Minimum rest gap between shifts"
-            value={policies.minRestGap}
-            desc="Hours between end of last shift and start of next"
-            onChange={(v) => save('minRestGap', Number(v))}
-          />
-          <Policy
-            title="Maximum weekly hours"
-            value={policies.maxWeeklyHours}
-            desc="OT triggered beyond this threshold"
-            onChange={(v) => save('maxWeeklyHours', Number(v))}
-          />
-          <Policy
-            title="Swap approval window"
-            value={policies.swapApprovalWindow}
-            desc="Hours before shift when manager approval is required"
-            onChange={(v) => save('swapApprovalWindow', Number(v))}
-          />
-
-        </div>
-      </Card>
-
-      <Card hover={false}>
-        <CardHeader
-          icon="rule"
-          title="Compliance rules"
-          subtitle="Enforce automatically by the scheduler"
-        />
-        <div className="space-y-sm mt-md">
-          {[
-            'Block double-booking an employee across departments',
-            'Require manager approval for any swap touching a critical role',
-            'Auto-deny swap if it would put an employee into overtime',
-            'Enforce minimum 2 RNs per shift in ICU Ward B',
-            'Mandatory 30-min unpaid meal break per shift over 6 hours',
-          ].map((rule) => (
-            <label key={rule} className="flex items-center gap-md p-sm rounded-lg hover:bg-surface-variant cursor-pointer">
-              <input type="checkbox" defaultChecked className="accent-primary w-4 h-4" />
-              <span className="font-body-md text-body-md text-on-surface flex-1">{rule}</span>
-              <Badge variant="info">Active</Badge>
-            </label>
-          ))}
         </div>
       </Card>
     </>
@@ -613,26 +475,6 @@ function Field({ label, value, onSave }) {
         onBlur={() => { if (local !== value) onSave(local) }}
         className="input-base"
       />
-    </div>
-  )
-}
-
-function Policy({ title, value, desc, onChange, suffix = 'hrs' }) {
-  return (
-    <div className="flex items-center gap-md py-md border-b border-outline-variant/20 last:border-0">
-      <div className="flex-1">
-        <h4 className="font-label-md text-label-md font-bold text-on-surface">{title}</h4>
-        <p className="font-label-sm text-label-sm text-on-surface-variant">{desc}</p>
-      </div>
-      <div className="flex items-center gap-1">
-        <input
-          type="number"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="input-base w-20 text-center"
-        />
-        <span className="font-label-md text-label-md text-on-surface-variant">{suffix}</span>
-      </div>
     </div>
   )
 }

@@ -1,8 +1,8 @@
 """Leave request routes — production ready."""
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 from sqlalchemy.orm import Session
@@ -16,12 +16,20 @@ from models.notification import Notification
 from ai_ml.assistant import ai_assistant
 from routes.shift import _serialize as _serialize_shift
 from utils.realtime import notify_org
+from utils.leave_shifts import (
+    affected_shifts,
+    build_shift_plan,
+    apply_shift_plan,
+    active_leave_for_user,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 def _serialize(l: LeaveRequest) -> dict:
+    plan = getattr(l, "shift_plan", None) or {}
+    returned = getattr(l, "returned_at", None)
     return {
         "id": l.id,
         "org_id": l.org_id,
@@ -37,6 +45,8 @@ def _serialize(l: LeaveRequest) -> dict:
         "approved_at": l.approved_at.isoformat() if l.approved_at else None,
         "decided_at": l.decided_at.isoformat() if l.decided_at else None,
         "rejected_at": l.rejected_at.isoformat() if l.rejected_at else None,
+        "returned_at": returned.isoformat() if returned else None,
+        "shift_plan": plan,
         "created_at": l.created_at.isoformat() if l.created_at else None,
         "updated_at": l.updated_at.isoformat() if l.updated_at else None,
     }
@@ -44,6 +54,33 @@ def _serialize(l: LeaveRequest) -> dict:
 
 def _lid() -> str:
     return f"lv_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}"
+
+
+def _parse_leave_dates(start_str, end_str):
+    if "T" in str(start_str):
+        start_dt = datetime.fromisoformat(str(start_str).replace("Z", "+00:00"))
+    else:
+        y, m, d = [int(x) for x in str(start_str).split("-")]
+        start_dt = datetime(y, m, d, 0, 0, 0, tzinfo=timezone.utc)
+    if "T" in str(end_str):
+        end_dt = datetime.fromisoformat(str(end_str).replace("Z", "+00:00"))
+    else:
+        y, m, d = [int(x) for x in str(end_str).split("-")]
+        end_dt = datetime(y, m, d, 23, 59, 59, tzinfo=timezone.utc)
+    return start_dt, end_dt
+
+
+@router.get("/active-status")
+async def get_active_leave_status(request: Request, db: Session = Depends(get_db)):
+    """Whether the current user is on an approved active leave."""
+    user = await get_current_user(request, db)
+    lv = active_leave_for_user(db, user)
+    if not lv:
+        return {"on_leave": False, "leave": None}
+    return {
+        "on_leave": True,
+        "leave": _serialize(lv),
+    }
 
 
 @router.get("/")
@@ -79,21 +116,7 @@ async def create_leave(request: Request, payload: dict, db: Session = Depends(ge
         raise HTTPException(status_code=400, detail="start_date and end_date are required")
 
     try:
-        if "T" in str(start_str):
-            start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-        else:
-            # Parse date string and create UTC-aware datetime at midnight
-            date_parts = str(start_str).split('-')
-            year, month, day = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
-            start_dt = datetime(year, month, day, 0, 0, 0, tzinfo=timezone.utc)
-        
-        if "T" in str(end_str):
-            end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
-        else:
-            # Parse date string and create UTC-aware datetime at end of day
-            date_parts = str(end_str).split('-')
-            year, month, day = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
-            end_dt = datetime(year, month, day, 23, 59, 59, tzinfo=timezone.utc)
+        start_dt, end_dt = _parse_leave_dates(start_str, end_str)
     except (ValueError, IndexError) as e:
         logger.error(f"Failed to parse leave dates: {start_str} to {end_str} - {e}")
         raise HTTPException(status_code=400, detail="Invalid date format")
@@ -133,14 +156,39 @@ async def create_leave(request: Request, payload: dict, db: Session = Depends(ge
     except Exception as e:
         logger.warning(f"Failed to create leave notification: {e}")
 
-    notify_org(
-        user.org_id,
-        "leave_request",
-        title="New leave request",
-        body=f"{employee_name} requested leave",
-        data={"leave_id": leave.id},
-    )
+    notify_org(user.org_id, "leave_request", title="New leave request",
+               body=f"{employee_name} requested leave", data={"leave_id": leave.id})
     return _serialize(leave)
+
+
+@router.get("/{leave_id}/shift-plan")
+async def get_leave_shift_plan(request: Request, leave_id: str, db: Session = Depends(get_db)):
+    """AI-assisted shift redistribution plan — required before approval."""
+    user = await get_current_user(request, db)
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    leave = db.query(LeaveRequest).filter(
+        LeaveRequest.id == leave_id, LeaveRequest.org_id == user.org_id
+    ).first()
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave request not found")
+    if leave.status != "pending":
+        raise HTTPException(status_code=400, detail="Leave is no longer pending")
+
+    plan = build_shift_plan(db, leave)
+    employees = db.query(User).filter(
+        User.org_id == user.org_id,
+        User.role != "admin",
+        User.id != leave.employee_id,
+    ).all()
+    return {
+        **plan,
+        "leave_id": leave.id,
+        "employee_name": leave.employee_name,
+        "start_date": _serialize(leave)["start_date"],
+        "end_date": _serialize(leave)["end_date"],
+        "candidates": [{"id": e.id, "name": e.name, "department": e.department} for e in employees],
+    }
 
 
 @router.get("/{leave_id}")
@@ -167,34 +215,29 @@ async def get_leave_reasoning(request: Request, leave_id: str, db: Session = Dep
 
     requester = db.query(User).filter(User.id == leave.employee_id).first()
     shifts = db.query(Shift).filter(Shift.org_id == user.org_id).all()
+    affected = affected_shifts(db, leave)
 
-    # Build employee work history from actual check-in / check-out records.
     requester_shifts = [s for s in shifts if s.employee_id == leave.employee_id or (leave.employee_id in (s.assigned_staff or []))]
     completed_shifts = [s for s in requester_shifts if s.check_in_at and s.check_out_at]
-    total_assigned = len(requester_shifts)
-    total_completed = len(completed_shifts)
-    last_check_out = max((s.check_out_at for s in completed_shifts), default=None)
-
     work_history = {
-        "total_assigned_shifts": total_assigned,
-        "total_completed_shifts": total_completed,
-        "last_check_out": last_check_out.isoformat() if last_check_out else None,
+        "total_assigned_shifts": len(requester_shifts),
+        "total_completed_shifts": len(completed_shifts),
+        "affected_during_leave": len(affected),
     }
 
     result = ai_assistant.explain_leave_decision(
         leave=_serialize(leave),
         requester={
-            "name": requester.name,
-            "department": requester.department,
-            "created_at": requester.created_at.isoformat() if requester and requester.created_at else None,
-        } if requester else {"name": "Unknown", "department": "Unknown"},
+            "name": requester.name if requester else "Unknown",
+            "department": requester.department if requester else "Unknown",
+        },
         org_shifts=[_serialize_shift(s) for s in shifts],
         work_history=work_history,
     )
     return result
 
 
-async def _decide(leave_id: str, decision: str, request: Request, db: Session):
+async def _decide(leave_id: str, decision: str, request: Request, db: Session, payload: dict = None):
     user = await get_current_user(request, db)
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
@@ -205,13 +248,44 @@ async def _decide(leave_id: str, decision: str, request: Request, db: Session):
         raise HTTPException(status_code=404, detail="Leave request not found")
     if leave.status != "pending":
         return _serialize(leave)
+
+    payload = payload or {}
+
     if decision == "approve":
+        affected = affected_shifts(db, leave)
+        shift_actions: List[dict] = payload.get("shift_plan") or []
+
+        if affected and not shift_actions:
+            raise HTTPException(
+                status_code=400,
+                detail="Shift coverage plan required before approval. Load shift plan and confirm redistribution.",
+            )
+
+        if affected:
+            planned_ids = {a.get("shift_id") for a in shift_actions}
+            missing = [s.id for s in affected if s.id not in planned_ids]
+            if missing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Shift plan must cover all {len(affected)} affected shifts",
+                )
+            applied = apply_shift_plan(db, leave, shift_actions)
+            leave.shift_plan = {"items": shift_actions, "applied": applied}
+        else:
+            leave.shift_plan = {"items": [], "applied": []}
+
+        employee = db.query(User).filter(User.id == leave.employee_id).first()
+        if employee:
+            employee.status = "on_leave"
+            employee.updated_at = datetime.now(timezone.utc)
+
         leave.status = "approved"
         leave.approved_by = user.id
         leave.approved_at = datetime.now(timezone.utc)
     else:
         leave.status = "rejected"
         leave.rejected_at = datetime.now(timezone.utc)
+
     leave.decided_at = datetime.now(timezone.utc)
     leave.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -219,16 +293,35 @@ async def _decide(leave_id: str, decision: str, request: Request, db: Session):
 
     try:
         status_word = "approved" if decision == "approve" else "declined"
+        body = f"Your {leave.type} leave ({leave.duration_days} day{'s' if leave.duration_days != 1 else ''}) was {status_word}."
+        if decision == "approve" and leave.shift_plan:
+            n = len((leave.shift_plan or {}).get("applied") or [])
+            if n:
+                body += f" {n} shift{'s' if n != 1 else ''} were reassigned or posted to the marketplace."
         db.add(Notification(
             id=f"n_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}",
             org_id=leave.org_id,
             user_id=leave.employee_id,
             type=f"leave_{status_word}",
             title=f"Leave request {status_word}",
-            body=f"Your {leave.type} leave ({leave.duration_days} day{'s' if leave.duration_days != 1 else ''}) was {status_word}.",
+            body=body,
             status="unread",
             created_at=datetime.now(timezone.utc),
         ))
+        if decision == "approve":
+            for admin in db.query(User).filter(User.org_id == leave.org_id, User.role == "admin").all():
+                if admin.id == user.id:
+                    continue
+                db.add(Notification(
+                    id=f"n_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}",
+                    org_id=leave.org_id,
+                    user_id=admin.id,
+                    type="leave_approved",
+                    title="Leave approved with shift plan",
+                    body=f"{leave.employee_name}'s leave was approved. Shifts were redistributed.",
+                    status="unread",
+                    created_at=datetime.now(timezone.utc),
+                ))
         db.commit()
     except Exception as e:
         logger.warning(f"Failed to create leave decision notification: {e}")
@@ -243,9 +336,53 @@ async def _decide(leave_id: str, decision: str, request: Request, db: Session):
     return _serialize(leave)
 
 
+@router.post("/{leave_id}/return")
+async def return_from_leave(request: Request, leave_id: str, db: Session = Depends(get_db)):
+    """Employee signals they are back from approved leave."""
+    user = await get_current_user(request, db)
+    leave = db.query(LeaveRequest).filter(
+        LeaveRequest.id == leave_id,
+        LeaveRequest.org_id == user.org_id,
+        LeaveRequest.employee_id == user.id,
+        LeaveRequest.status == "approved",
+    ).first()
+    if not leave:
+        raise HTTPException(status_code=404, detail="Active leave not found")
+
+    if getattr(leave, "returned_at", None):
+        return {"message": "Already marked as returned", "leave": _serialize(leave)}
+
+    leave.returned_at = datetime.now(timezone.utc)
+    leave.updated_at = datetime.now(timezone.utc)
+    user.status = "active"
+    user.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+    try:
+        for admin in db.query(User).filter(User.org_id == user.org_id, User.role == "admin").all():
+            db.add(Notification(
+                id=f"n_{int(datetime.now(timezone.utc).timestamp() * 1000)}_{secrets.token_hex(4)}",
+                org_id=user.org_id,
+                user_id=admin.id,
+                type="leave_return",
+                title=f"{user.name} is back from leave",
+                body=f"{user.name} marked themselves as returned from {leave.type} leave.",
+                status="unread",
+                created_at=datetime.now(timezone.utc),
+            ))
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to notify admins of return: {e}")
+
+    notify_org(user.org_id, "leave_return", title="Employee returned",
+               body=f"{user.name} is back from leave", data={"leave_id": leave.id})
+    return {"message": "Welcome back!", "leave": _serialize(leave)}
+
+
 @router.put("/{leave_id}/approve")
 async def approve_leave(request: Request, leave_id: str, db: Session = Depends(get_db)):
-    return await _decide(leave_id, "approve", request, db)
+    payload = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    return await _decide(leave_id, "approve", request, db, payload)
 
 
 @router.put("/{leave_id}/reject")
@@ -256,12 +393,11 @@ async def reject_leave(request: Request, leave_id: str, db: Session = Depends(ge
 @router.put("/{leave_id}/decide")
 async def decide_leave(request: Request, leave_id: str, payload: dict,
                        db: Session = Depends(get_db)):
-    """Compatibility endpoint: frontend sends {status: "approved"|"rejected"}."""
     decision = (payload or {}).get("status", "approved")
     if decision not in ("approved", "rejected"):
         raise HTTPException(status_code=400, detail="status must be 'approved' or 'rejected'")
     verb = "approve" if decision == "approved" else "reject"
-    return await _decide(leave_id, verb, request, db)
+    return await _decide(leave_id, verb, request, db, payload)
 
 
 @router.delete("/{leave_id}")

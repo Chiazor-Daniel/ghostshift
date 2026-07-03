@@ -1,7 +1,9 @@
 import Sidebar from '../components/Sidebar.jsx'
 import ChatAssistant from '../components/ChatAssistant.jsx'
+import OnLeavePage from '../pages/OnLeavePage.jsx'
 import { useState, useEffect, createContext, useContext, useMemo, useCallback } from 'react'
 import { useRealtime } from '../hooks/useRealtime.jsx'
+import { realAPI } from '../services/realAPI.js'
 
 export const MobileNavContext = createContext(null)
 export const UserContext = createContext(null)
@@ -39,6 +41,35 @@ export default function AppShell({ activeRole, setActiveRole, children }) {
   const userValue = useMemo(() => ({ user: resolvedUser, activeRole }), [activeRole, resolvedUser])
 
   useRealtime(resolvedUser?.id ? resolvedUser : null)
+
+  const [leaveStatus, setLeaveStatus] = useState(null)
+
+  useEffect(() => {
+    if (!resolvedUser?.id || resolvedUser.role !== 'employee') {
+      setLeaveStatus(null)
+      return
+    }
+    let cancelled = false
+    async function check() {
+      try {
+        const st = await realAPI.getLeaveActiveStatus()
+        if (!cancelled) setLeaveStatus(st)
+      } catch {
+        if (!cancelled) setLeaveStatus({ on_leave: false })
+      }
+    }
+    check()
+    const onChange = () => check()
+    window.addEventListener('gs:data-changed', onChange)
+    return () => {
+      cancelled = true
+      window.removeEventListener('gs:data-changed', onChange)
+    }
+  }, [resolvedUser?.id, resolvedUser?.role])
+
+  if (resolvedUser?.role === 'employee' && leaveStatus?.on_leave) {
+    return <OnLeavePage leave={leaveStatus.leave} user={resolvedUser} />
+  }
 
   return (
     <UserContext.Provider value={userValue}>

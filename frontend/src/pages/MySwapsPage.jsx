@@ -54,8 +54,8 @@ export default function MySwapsPage() {
   }
 
   const kindLabel = (s) => {
-    if (s.kind === 'pickup') return 'Pickup request'
-    if (s.kind === 'release') return 'Release request'
+    if (s.kind === 'pickup') return 'Shift pickup'
+    if (s.kind === 'release') return 'Give up shift'
     if (s.kind === 'swap') return 'Swap trade'
     return 'Request'
   }
@@ -65,7 +65,7 @@ export default function MySwapsPage() {
       <div className="mb-6">
         <h1 className="font-display-sm font-bold text-on-surface">My Swap Requests</h1>
         <p className="font-body-md text-body-md text-on-surface-variant mt-1">
-          Track your shift pickups and swap trades.
+          Track your shift pickups, trades, and give-up requests.
         </p>
       </div>
 
@@ -97,7 +97,7 @@ export default function MySwapsPage() {
             <EmptyState
               icon="swap_horiz"
               title="No swap requests"
-              description="You haven't requested any shift swaps or pickups yet. Open a shift from your portal or the marketplace to start one."
+              description="You haven't requested any shift changes yet. Open a shift from your portal to swap, give up, or pick up hours."
             />
           ) : (
             <div className="space-y-sm mt-md">
@@ -107,7 +107,9 @@ export default function MySwapsPage() {
                 const meta = statusMeta(sw)
                 const details = []
                 if (fromShift) details.push({ label: 'From', value: fromShift.role || fromShift.title, sub: `${formatDateFull(fromShift.date)} · ${fromShift.department}` })
-                if (toShift) details.push({ label: 'To', value: toShift.role || toShift.title, sub: `${formatDateFull(toShift.date)} · ${toShift.department}` })
+                if (sw.kind === 'release') {
+                  details.push({ label: 'Outcome', value: 'Returns to marketplace if approved' })
+                } else if (toShift) details.push({ label: 'To', value: toShift.role || toShift.title, sub: `${formatDateFull(toShift.date)} · ${toShift.department}` })
                 else if (sw.kind === 'pickup') details.push({ label: 'To', value: 'Open shift' })
                 return (
                   <RichListItem
