@@ -8,5 +8,7 @@ services:
 
   frontend:
     environment:
-      VITE_API_URL: "https://${CODESPACE_NAME}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}/api"
-      VITE_WS_URL: "wss://${CODESPACE_NAME}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}/ws"
+      VITE_API_URL: "/api"
+      VITE_WS_URL: "ws://localhost:8000/ws"
+      # Vite dev server proxies /api and /ws to the backend container,
+      # so all browser requests go to the same origin — no CORS needed.
