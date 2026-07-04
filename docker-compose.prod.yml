@@ -1,0 +1,89 @@
+# Production-like local stack (for integration testing before actual AWS deploy).
+# Uses production Dockerfiles for backend and frontend.
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
+x-docker-overrides: &docker-overrides
+  DEBUG: "false"
+  LOG_LEVEL: "INFO"
+  JWT_SECRET: "${JWT_SECRET?JWT_SECRET is required}"
+  DATABASE_URL: "postgresql://ghostshift:ghostshift@postgres:5432/ghostshift"
+  DATABASE_HOST: "postgres"
+  DATABASE_PORT: "5432"
+  DATABASE_USER: "ghostshift"
+  DATABASE_PASSWORD: "ghostshift"
+  REDIS_URL: "redis://redis:6379/0"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  CORS_ORIGINS: "http://localhost:8080"
+  HIPAA_ENABLED: "false"
+  OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+  OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4o}"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ghostshift
+      POSTGRES_PASSWORD: ghostshift
+      POSTGRES_DB: ghostshift
+    volumes:
+      - pgdata-prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ghostshift"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: always
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: ./backend/.env
+    environment: *docker-overrides
+    command: >
+      sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: ./backend/.env
+    environment: *docker-overrides
+    command: celery -A tasks worker --loglevel=info --concurrency=2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+
+  nginx:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  pgdata-prod:

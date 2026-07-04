@@ -1,0 +1,132 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: ghostshift
+  ECS_CLUSTER: ghostshift
+  ECS_SERVICE_BACKEND: ghostshift-backend
+  ECS_SERVICE_CELERY: ghostshift-celery
+  ECS_TASK_DEFINITION_BACKEND: infra/aws/ecs-task-definition-backend.json
+  ECS_TASK_DEFINITION_CELERY: infra/aws/ecs-task-definition-celery.json
+  CONTAINER_NAME_BACKEND: ghostshift-backend
+  CONTAINER_NAME_CELERY: ghostshift-celery
+
+jobs:
+  deploy:
+    name: Build & Deploy to ${{ inputs.environment || 'production' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        id: vars
+        run: echo "IMAGE_TAG=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      # ── Backend ──────────────────────────────────────────────
+      - name: Build & push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/backend:latest
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/backend:${{ steps.vars.outputs.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── Frontend (build + push to S3) ───────────────────────
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+          envsubst < .env.production > .env
+
+      - name: Deploy frontend to S3
+        run: |
+          aws s3 sync frontend/dist/ s3://${{ secrets.S3_BUCKET_FRONTEND }}/ \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*"
+
+      # ── Backend ECS deploy ───────────────────────────────────
+      - name: Render ECS task definition (backend)
+        id: render-backend
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.ECS_TASK_DEFINITION_BACKEND }}
+          container-name: ${{ env.CONTAINER_NAME_BACKEND }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/backend:${{ steps.vars.outputs.IMAGE_TAG }}
+
+      - name: Deploy backend to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-backend.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE_BACKEND }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      # ── Celery ECS deploy ────────────────────────────────────
+      - name: Render ECS task definition (celery)
+        id: render-celery
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ env.ECS_TASK_DEFINITION_CELERY }}
+          container-name: ${{ env.CONTAINER_NAME_CELERY }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}/backend:${{ steps.vars.outputs.IMAGE_TAG }}
+
+      - name: Deploy celery to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-celery.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE_CELERY }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      # ── Run DB migrations ────────────────────────────────────
+      - name: Run database migrations
+        run: |
+          aws ecs run-task \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task-definition ${{ steps.render-backend.outputs.task-definition }} \
+            --overrides '{
+              "containerOverrides": [{
+                "name": "ghostshift-backend",
+                "command": ["alembic", "upgrade", "head"]
+              }]
+            }' \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ secrets.VPC_SUBNETS }}],securityGroups=[${{ secrets.ECS_SG }}],assignPublicIp=ENABLED}"

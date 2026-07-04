@@ -22,7 +22,7 @@ try:
         here = Path(__file__).resolve().parent
         for candidate in [here.parent / ".env", here / ".env", Path.cwd() / ".env"]:
             if candidate.exists():
-                load_dotenv(candidate, override=True)
+                load_dotenv(candidate, override=False)
                 _loaded = True
                 return True
         return False

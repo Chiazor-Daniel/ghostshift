@@ -1,0 +1,93 @@
+# ── Docker-specific overrides (take precedence over .env) ──
+x-docker-overrides: &docker-overrides
+  DEBUG: "true"
+  LOG_LEVEL: "DEBUG"
+  DATABASE_URL: "postgresql://ghostshift:ghostshift@postgres:5432/ghostshift"
+  DATABASE_HOST: "postgres"
+  DATABASE_PORT: "5432"
+  DATABASE_USER: "ghostshift"
+  DATABASE_PASSWORD: "ghostshift"
+  REDIS_URL: "redis://redis:6379/0"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  CORS_ORIGINS: "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"
+  SMTP_HOST: "mailpit"
+  SMTP_PORT: "1025"
+  SMTP_USER: ""
+  SMTP_PASSWORD: ""
+  SMTP_FROM: "dev@ghostshift.local"
+  HIPAA_ENABLED: "false"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ghostshift
+      POSTGRES_PASSWORD: ghostshift
+      POSTGRES_DB: ghostshift
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ghostshift"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: ./backend/.env
+    environment: *docker-overrides
+    command: >
+      sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - /app/venv
+      - /app/__pycache__
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000/api
+      - VITE_WS_URL=ws://localhost:8000/ws
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

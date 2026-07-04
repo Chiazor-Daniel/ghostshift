@@ -30,7 +30,8 @@ TIMESTAMP_TABLES = {
     "certification_alerts": ["expiry_date", "resolved_at", "created_at", "updated_at"],
     "peak_hour_risk": ["date", "created_at"],
     "invites": ["expires_at", "accepted_at", "created_at", "updated_at"],
-    "conversation_turns": ["created_at"],
+    # conversation_turns is created by model.create_all() with timezone=True already
+    # "conversation_turns": ["created_at"],
 }
 
 

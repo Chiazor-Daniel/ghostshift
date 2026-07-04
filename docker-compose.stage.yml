@@ -1,0 +1,14 @@
+# Stage overlay — adapts URLs for GitHub Codespaces port forwarding.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.stage.yml up -d
+
+services:
+  backend:
+    environment:
+      CORS_ORIGINS: "https://${CODESPACE_NAME}-5173.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-preview.app.github.dev},http://localhost:5173,http://localhost:3000"
+    ports:
+      - "8000:8000"
+
+  frontend:
+    environment:
+      VITE_API_URL: "https://${CODESPACE_NAME}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-preview.app.github.dev}/api"
+      VITE_WS_URL: "wss://${CODESPACE_NAME}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-preview.app.github.dev}/ws"

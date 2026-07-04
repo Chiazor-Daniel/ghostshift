@@ -74,7 +74,8 @@ temp/
 # Docker
 # (GhostShift is containerised, so the Dockerfile IS tracked.)
 # Dockerfile
-docker-compose.yml
+# docker-compose.yml lives at project root and IS tracked.
+# docker-compose.yml
 
 # Backup files
 *.backup

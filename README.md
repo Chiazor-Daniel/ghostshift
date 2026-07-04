@@ -7,7 +7,44 @@ The repo has two parts:
 - `backend/` — FastAPI service (auth, rota, swaps, fatigue scoring, AI assistant)
 - `frontend/` — React + Vite marketing site and authenticated app
 
-## Quick start
+## Quick start (Docker)
+
+```bash
+git clone <repo-url> && cd GhostShift
+
+# (optional) Copy example env to get API keys for AI and email features
+cp backend/.env.example backend/.env
+
+# Start everything
+docker compose up -d
+
+# Open http://localhost:5173
+```
+
+No `.env` is required — Docker Compose sets DB, Redis, CORS, and JWT
+automatically. If you do copy `backend/.env.example`, those values are
+loaded too but never override the Docker-specific ones.
+
+First build takes a couple minutes (pip + npm install). Subsequent starts are instant.
+
+On first boot the backend auto-runs migrations and seeds demo data — the app is ready when you see `Uvicorn running on http://0.0.0.0:8000` in the logs (`docker compose logs -f backend`).
+
+| Service        | URL                          |
+|----------------|------------------------------|
+| Frontend (Vite)| http://localhost:5173        |
+| API docs       | http://localhost:8000/docs   |
+| Captured email | http://localhost:8025        |
+
+### Manual commands
+
+```bash
+docker compose logs -f      # tail all logs
+docker compose logs -f backend  # tail just backend logs
+docker compose down         # stop everything
+docker compose restart backend  # restart backend only
+```
+
+## Quick start (no Docker)
 
 ### Backend
 
@@ -18,14 +55,10 @@ source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# Open .env and set DATABASE_URL, JWT_SECRET, CORS_ORIGINS, GROQ_API_KEY at minimum.
+# Open .env and set DATABASE_URL, JWT_SECRET, CORS_ORIGINS at minimum.
 
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
-
-The API is then available at `http://localhost:8000`. Interactive docs: `http://localhost:8000/docs`.
-
-On first boot, `Base.metadata.create_all` runs and creates all tables. No manual migration is needed for development.
 
 ### Frontend
 
@@ -34,46 +67,69 @@ cd frontend
 npm install
 
 cp .env.example .env
-# Defaults to http://localhost:8000/api — change if your backend is elsewhere.
 
-npm run dev          # development on http://localhost:5173
+npm run dev          # http://localhost:5173
 npm run build        # production bundle in dist/
 ```
+
+## Environments
+
+| Environment | Where | How |
+|---|---|---|
+| **Dev** (local) | Your machine | `docker compose up -d` |
+| **Stage** | GitHub Codespaces | `docker compose -f docker-compose.yml -f docker-compose.stage.yml up -d` |
+| **Live** | AWS | CI/CD via GitHub Actions → ECS Fargate + S3/CloudFront |
+
+See `DEPLOYMENT_STRATEGY.md` for the full architecture and CI/CD pipeline.
 
 ## Repository layout
 
 ```
 .
-├── backend/
-│   ├── main.py                  # FastAPI entry point
-│   ├── config/                  # env loader, DB, settings
-│   ├── models/                  # SQLAlchemy models
-│   ├── routes/                  # API endpoints (auth, shifts, swaps, leave, ...)
-│   ├── schemas/                 # Pydantic request/response shapes
-│   ├── ai_ml/                   # burnout scoring + AI assistant
-│   ├── middleware/              # JWT auth
-│   ├── utils/                   # email, helpers
-│   ├── migrations/              # Alembic (optional — create_all handles first boot)
-│   ├── tests/
-│   ├── requirements.txt
+├── backend/                     # FastAPI Python backend
+│   ├── main.py
+│   ├── config/
+│   ├── models/
+│   ├── routes/
+│   ├── schemas/
+│   ├── ai_ml/
+│   ├── middleware/
+│   ├── utils/
+│   ├── migrations/
 │   ├── Dockerfile
-│   └── .env.example
+│   └── requirements.txt
 │
-├── frontend/
+├── frontend/                    # React + Vite frontend
 │   ├── src/
-│   │   ├── pages/               # marketing + authenticated routes
+│   │   ├── pages/
 │   │   ├── components/
-│   │   ├── services/            # API client (realAPI.js)
+│   │   ├── services/
 │   │   ├── hooks/
 │   │   ├── data/
 │   │   └── lib/
 │   ├── public/
-│   ├── dist/                    # build output (committed for static deploy)
-│   ├── index.html
+│   ├── Dockerfile
 │   ├── package.json
-│   └── .env.example
+│   └── vite.config.js
 │
-└── README.md
+├── infra/                       # Production infrastructure
+│   ├── nginx/nginx.conf
+│   └── aws/
+│       ├── ecs-task-definition-backend.json
+│       └── ecs-task-definition-celery.json
+│
+├── .github/workflows/
+│   ├── ci.yml                   # Lint, test, build on PR/push
+│   └── deploy.yml               # Build & deploy to AWS on main push
+│
+├── scripts/
+│   ├── dev.sh                   # One-command dev bootstrap
+│   └── seed.sh                  # Seed demo data helper
+│
+├── docker-compose.yml           # Dev environment
+├── docker-compose.stage.yml     # Codespaces overlay
+├── docker-compose.prod.yml      # Production-like local stack
+└── DEPLOYMENT_STRATEGY.md       # Architecture & deployment docs
 ```
 
 ## Environment variables
@@ -91,11 +147,6 @@ The backend reads from `backend/.env` (loaded via `python-dotenv` at import time
 | `PORT` | Optional | Set by the host (Render, Fly, Railway). Defaults to 8000 locally. |
 
 The full list of optional variables (AWS S3, rate limits, file upload limits, etc.) is in `backend/.env.example`.
-
-## Deployment
-
-- **Backend** is packaged via `backend/Dockerfile` (Python 3.12 slim, healthcheck on `/health`). The image reads env at runtime — nothing is baked in.
-- **Frontend** is a Vite static build. `cd frontend && npm run build` produces `frontend/dist/`, which can be served from any static host (Netlify, Vercel, S3 + CloudFront, Nginx).
 
 ## Tech stack
 
