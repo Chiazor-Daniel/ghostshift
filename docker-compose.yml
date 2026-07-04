@@ -56,10 +56,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    # env_file is optional — .env is gitignored, compose works without it
     env_file: ./backend/.env
     environment: *docker-overrides
     command: >
-      sh -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "mkdir -p /app/logs && alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
       - "8000:8000"
     volumes:
