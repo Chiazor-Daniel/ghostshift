@@ -118,19 +118,9 @@ if not _origins_env:
 origins = [o.strip() for o in _origins_env.split(",") if o.strip()]
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-)
-
-
 @app.middleware("http")
 async def cors_preflight_handler(request: Request, call_next):
-    """Handle OPTIONS preflight — runs outermost so it catches preflight first."""
+    """Handles OPTIONS preflight before Starlette's CORSMiddleware (registered first = outermost)."""
     if request.method == "OPTIONS":
         origin = request.headers.get("origin")
         if not origin:
@@ -155,6 +145,16 @@ async def cors_preflight_handler(request: Request, call_next):
         response.headers.setdefault("Access-Control-Allow-Credentials", "true")
         response.headers.setdefault("Vary", "Origin")
     return response
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
