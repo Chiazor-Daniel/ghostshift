@@ -118,29 +118,6 @@ if not _origins_env:
 origins = [o.strip() for o in _origins_env.split(",") if o.strip()]
 
 
-@app.middleware("http")
-async def cors_preflight_handler(request: Request, call_next):
-    """Short-circuit OPTIONS preflight requests with explicit CORS headers."""
-    if request.method == "OPTIONS":
-        origin = request.headers.get("origin")
-        if origin and origin in origins:
-            requested_headers = request.headers.get("access-control-request-headers", "*")
-            return JSONResponse(
-                status_code=200,
-                content={},
-                headers={
-                    "Access-Control-Allow-Origin": origin,
-                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-                    "Access-Control-Allow-Headers": requested_headers,
-                    "Access-Control-Allow-Credentials": "true",
-                    "Access-Control-Max-Age": "600",
-                    "Vary": "Origin",
-                },
-            )
-        return JSONResponse(status_code=400, content={"detail": "Origin not allowed"})
-    return await call_next(request)
-
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -149,6 +126,35 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def cors_preflight_handler(request: Request, call_next):
+    """Handle OPTIONS preflight — runs outermost so it catches preflight first."""
+    if request.method == "OPTIONS":
+        origin = request.headers.get("origin")
+        if not origin:
+            return JSONResponse(status_code=400, content="Origin header required")
+        requested_headers = request.headers.get("access-control-request-headers", "*")
+        return JSONResponse(
+            status_code=200,
+            content={},
+            headers={
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+                "Access-Control-Allow-Headers": requested_headers,
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Max-Age": "600",
+                "Vary": "Origin",
+            },
+        )
+    response = await call_next(request)
+    origin = request.headers.get("origin")
+    if origin:
+        response.headers.setdefault("Access-Control-Allow-Origin", origin)
+        response.headers.setdefault("Access-Control-Allow-Credentials", "true")
+        response.headers.setdefault("Vary", "Origin")
+    return response
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
