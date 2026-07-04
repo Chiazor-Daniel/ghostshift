@@ -4,11 +4,9 @@
 services:
   backend:
     environment:
-      CORS_ORIGINS: "https://${CODESPACE_NAME}-5173.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-preview.app.github.dev},http://localhost:5173,http://localhost:3000"
-    ports:
-      - "8000:8000"
+      CORS_ORIGINS: "https://${CODESPACE_NAME}-5173.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev},http://localhost:5173,http://localhost:3000"
 
   frontend:
     environment:
-      VITE_API_URL: "https://${CODESPACE_NAME}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-preview.app.github.dev}/api"
-      VITE_WS_URL: "wss://${CODESPACE_NAME}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-preview.app.github.dev}/ws"
+      VITE_API_URL: "https://${CODESPACE_NAME}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}/api"
+      VITE_WS_URL: "wss://${CODESPACE_NAME}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}/ws"
