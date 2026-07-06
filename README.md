@@ -1,13 +1,13 @@
 # GhostShift
 
-A workforce scheduling web application with interactive d3.js data visualization.
+A workforce scheduling web application with interactive data visualization.
 
 Built for the INCO course — Innovation and Complexity Management.
 
 ## Architecture
 
 ```
-frontend/  →  React + d3.js (Vite dev server on :5173)
+frontend/  →  React + Recharts (Vite dev server on :5173)
 backend/   →  FastAPI + PostgreSQL (uvicorn on :8000)
             - REST API with JWT auth
             - Structured JSON logging (structlog)
