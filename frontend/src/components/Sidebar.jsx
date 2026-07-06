@@ -25,6 +25,7 @@ const navItems = [
   { to: '/app/attendance', label: 'Attendance', icon: 'schedule', roles: ['admin'] },
   { to: '/app/employees', label: 'Employees', icon: 'groups', roles: ['admin'] },
   { to: '/app/insights', label: 'AI Insights', icon: 'monitor_heart', roles: ['admin'] },
+  { to: '/app/health', label: 'Health Dashboard', icon: 'ecg_heart', roles: ['employee', 'admin'] },
 ]
 
 export default function Sidebar({

@@ -4,28 +4,20 @@ Healthcare Workforce Scheduling Platform
 """
 
 import os
-import sys
-import logging
+import structlog
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import PlainTextResponse
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('logs/app.log')
-    ]
-)
-logger = logging.getLogger(__name__)
+from config.logging import setup_logging, get_logger
+
+# Configure structured JSON logging
+setup_logging()
+logger = get_logger(__name__)
 
 # Import database
 from config.database import engine, Base, get_db
@@ -36,6 +28,7 @@ import models  # noqa: F401
 
 # Import routes
 from routes import auth, organization, employee, shift, swap, leave, availability, analytics, notification, integration, audit, invite
+from fhir.routes import router as fhir_router
 
 # Import WebSocket
 try:
@@ -119,6 +112,17 @@ origins = [o.strip() for o in _origins_env.split(",") if o.strip()]
 
 
 @app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    from uuid import uuid4
+    request_id = request.headers.get("X-Request-ID", str(uuid4()))
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(request_id=request_id)
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
+@app.middleware("http")
 async def cors_preflight_handler(request: Request, call_next):
     """Handles OPTIONS preflight before Starlette's CORSMiddleware (registered first = outermost)."""
     if request.method == "OPTIONS":
@@ -169,6 +173,7 @@ app.include_router(notification.router, prefix="/api/notifications", tags=["Noti
 app.include_router(integration.router, prefix="/api/integrations", tags=["Integrations"])
 app.include_router(audit.router, prefix="/api/audit", tags=["Audit Logs"])
 app.include_router(invite.router, prefix="/api/invites", tags=["Invitations"])
+app.include_router(fhir_router, tags=["FHIR"])
 
 # Include WebSocket router
 if WEBSOCKET_ENABLED:
@@ -222,7 +227,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Handle global exceptions"""
-    logger.error(f"Global exception: {exc}", exc_info=True)
+    logger.error("global_exception", error=str(exc), error_type=type(exc).__name__, exc_info=True)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "Internal server error", "type": type(exc).__name__}

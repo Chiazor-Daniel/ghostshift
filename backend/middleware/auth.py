@@ -6,7 +6,6 @@ JWT token validation and user authentication with secure password hashing.
 import os
 import bcrypt
 import jwt
-import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import Request, HTTPException, status
@@ -15,12 +14,13 @@ from sqlalchemy.orm import Session
 
 from config.database import SessionLocal
 from config.env import load_env
+from config.logging import get_logger
 
 load_env()  # ensure JWT_SECRET is available before we read it
 
 from models.user import User
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # JWT Configuration (read from env at import-time)
 _jwt_secret = os.getenv("JWT_SECRET")
