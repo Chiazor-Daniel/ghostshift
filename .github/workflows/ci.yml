@@ -45,29 +45,6 @@ jobs:
   test-backend:
     name: Test Backend (pytest)
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: ghostshift
-          POSTGRES_PASSWORD: ghostshift
-          POSTGRES_DB: ghostshift_test
-        options: >-
-          --health-cmd pg_isready -U ghostshift
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 5
-        ports:
-          - 5432:5432
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 5
-        ports:
-          - 6379:6379
     defaults:
       run:
         working-directory: ./backend
@@ -78,11 +55,13 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: pip install pytest pytest-asyncio pytest-cov httpx
-      - run: |
-          export DATABASE_URL="postgresql+asyncpg://ghostshift:ghostshift@localhost:5432/ghostshift_test"
-          export REDIS_URL="redis://localhost:6379/0"
-          export JWT_SECRET="test-secret"
-          pytest --cov=. --cov-report=xml --cov-report=term -v
+      - run: pytest tests/ --cov=. --cov-report=xml --cov-report=term -v
+        env:
+          JWT_SECRET: test-secret-key-32-chars-minimum!!!!
+          CORS_ORIGINS: http://localhost:5173
+          DATABASE_URL: sqlite:///./test.db
+          SEED_DEMO: "false"
+          DEBUG: "false"
       - uses: codecov/codecov-action@v4
         with:
           files: ./backend/coverage.xml
