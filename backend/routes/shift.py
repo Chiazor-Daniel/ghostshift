@@ -1,5 +1,4 @@
 """Shift routes — production ready."""
-import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -10,12 +9,66 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from config.database import get_db
+from config.logging import get_logger
 from middleware.auth import get_current_user
 from models.shift import Shift
 from models.user import User
 from utils.realtime import notify_org
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+
+class CreateShiftPayload(BaseModel):
+    title: str = Field(..., min_length=1)
+    department: str = Field(..., min_length=1)
+    date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    start_hour: int = Field(default=9, ge=0, le=23)
+    duration_hours: int = Field(default=8, ge=1, le=24)
+    department_id: Optional[str] = None
+    employee_id: Optional[str] = None
+    manager_id: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    type: Optional[str] = None
+    urgency: Optional[str] = None
+    eligible: Optional[int] = 0
+    training_credit: Optional[bool] = False
+    seniority_preference: Optional[str] = "none"
+    required_staff: Optional[int] = 1
+    assigned_staff: Optional[list[str]] = None
+    notes: Optional[str] = None
+
+
+class UpdateShiftPayload(BaseModel):
+    title: Optional[str] = None
+    status: Optional[str] = None
+    type: Optional[str] = None
+    urgency: Optional[str] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    description: Optional[str] = None
+    department: Optional[str] = None
+    seniority_preference: Optional[str] = None
+    start_hour: Optional[int] = None
+    duration_hours: Optional[int] = None
+    eligible_count: Optional[int] = None
+    required_staff: Optional[int] = None
+    training_credit: Optional[bool] = None
+    assigned_staff: Optional[list[str]] = None
+    employee_id: Optional[str] = None
+    date: Optional[str] = None
+
+
+class AssignPayload(BaseModel):
+    employee_id: str
+
+
+class CheckInPayload(BaseModel):
+    notes: Optional[str] = None
+
+
+class CheckOutPayload(BaseModel):
+    notes: Optional[str] = None
 router = APIRouter()
 
 
@@ -118,59 +171,47 @@ async def list_shifts(request: Request, start_date: Optional[str] = None,
 
 
 @router.post("/")
-async def create_shift(request: Request, payload: dict, db: Session = Depends(get_db)):
+async def create_shift(request: Request, payload: CreateShiftPayload, db: Session = Depends(get_db)):
     user = await get_current_user(request, db)
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
-    title = (payload.get("title") or "").strip()
-    department = (payload.get("department") or "").strip()
-    if not title or not department:
-        raise HTTPException(status_code=400, detail="title and department are required")
-    if not payload.get("date"):
-        raise HTTPException(status_code=400, detail="date is required")
+    title = payload.title.strip()
+    department = payload.department.strip()
 
     try:
-        # Parse date and create UTC-aware datetime to avoid timezone drift
-        date_str = payload['date']
-        start_hour = int(payload.get('start_hour', 9))
-        # Parse the date string (format: YYYY-MM-DD)
-        date_parts = date_str.split('-')
+        date_parts = payload.date.split('-')
         year, month, day = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
-        # Create UTC-aware datetime
-        start_dt = datetime(year, month, day, start_hour, 0, 0, tzinfo=timezone.utc)
+        start_dt = datetime(year, month, day, payload.start_hour, 0, 0, tzinfo=timezone.utc)
     except (ValueError, IndexError) as e:
-        logger.error(f"Failed to parse date/time: {payload.get('date')} {payload.get('start_hour')} - {e}")
+        logger.error("failed_to_parse_shift_date", date=payload.date, error=str(e))
         raise HTTPException(status_code=400, detail="Invalid date or start_hour")
 
-    duration = int(payload.get("duration_hours") or 8)
-    end_dt = start_dt + timedelta(hours=duration)
+    end_dt = start_dt + timedelta(hours=payload.duration_hours)
 
     shift = Shift(
         id=_sid(),
         org_id=user.org_id,
-        # Treat empty-string department_id as None — empty string would fail the
-        # FK constraint to departments.id.
-        department_id=payload.get("department_id") or None,
-        employee_id=payload.get("employee_id"),
-        manager_id=payload.get("manager_id") or user.id,
+        department_id=payload.department_id or None,
+        employee_id=payload.employee_id,
+        manager_id=payload.manager_id or user.id,
         title=title,
-        description=payload.get("description") or payload.get("notes"),
+        description=payload.description or payload.notes,
         department=department,
         start_time=start_dt,
         end_time=end_dt,
-        start_hour=int(payload.get("start_hour", 9)),
-        duration_hours=duration,
-        status=payload.get("status") or "open",
-        type=payload.get("type") or "regular",
-        urgency=payload.get("urgency") or "medium",
-        eligible_count=int(payload.get("eligible") or 0),
-        training_credit=bool(payload.get("training_credit")),
-        seniority_preference=payload.get("seniority_preference") or "none",
-        required_staff=int(payload.get("required_staff") or 1),
-        assigned_staff=payload.get("assigned_staff") or (
-            [payload["employee_id"]] if payload.get("employee_id") else []
+        start_hour=payload.start_hour,
+        duration_hours=payload.duration_hours,
+        status=payload.status or "open",
+        type=payload.type or "regular",
+        urgency=payload.urgency or "medium",
+        eligible_count=payload.eligible or 0,
+        training_credit=payload.training_credit or False,
+        seniority_preference=payload.seniority_preference or "none",
+        required_staff=payload.required_staff or 1,
+        assigned_staff=payload.assigned_staff or (
+            [payload.employee_id] if payload.employee_id else []
         ),
-        notes=payload.get("notes"),
+        notes=payload.notes,
         created_at=datetime.now(timezone.utc),
     )
     db.add(shift)
@@ -224,7 +265,7 @@ async def get_shift(request: Request, shift_id: str, db: Session = Depends(get_d
 
 
 @router.put("/{shift_id}")
-async def update_shift(request: Request, shift_id: str, payload: dict,
+async def update_shift(request: Request, shift_id: str, payload: UpdateShiftPayload,
                        db: Session = Depends(get_db)):
     user = await get_current_user(request, db)
     if user.role != "admin":
@@ -235,44 +276,46 @@ async def update_shift(request: Request, shift_id: str, payload: dict,
     if not shift:
         raise HTTPException(status_code=404, detail="Shift not found")
 
-    for k in ("title", "status", "type", "urgency", "location", "notes",
-              "description", "department", "seniority_preference"):
-        if k in payload and payload[k] is not None:
-            setattr(shift, k, payload[k])
+    update_data = payload.model_dump(exclude_unset=True)
 
-    for k in ("duration_hours", "eligible_count", "start_hour", "required_staff"):
-        if k in payload and payload[k] is not None:
-            setattr(shift, k, int(payload[k]))
-    if "training_credit" in payload:
-        shift.training_credit = bool(payload["training_credit"])
-    if "assigned_staff" in payload:
-        shift.assigned_staff = payload["assigned_staff"] or []
+    str_fields = ("title", "status", "type", "urgency", "location", "notes",
+                  "description", "department", "seniority_preference")
+    for k in str_fields:
+        if k in update_data and update_data[k] is not None:
+            setattr(shift, k, update_data[k])
 
-    if "employee_id" in payload:
-        new_emp = payload.get("employee_id")
+    int_fields = ("duration_hours", "eligible_count", "start_hour", "required_staff")
+    for k in int_fields:
+        if k in update_data and update_data[k] is not None:
+            setattr(shift, k, int(update_data[k]))
+
+    if "training_credit" in update_data:
+        shift.training_credit = bool(update_data["training_credit"])
+    if "assigned_staff" in update_data:
+        shift.assigned_staff = update_data["assigned_staff"] or []
+
+    if "employee_id" in update_data:
+        new_emp = update_data["employee_id"]
         shift.employee_id = new_emp
         if new_emp:
             assigned = list(shift.assigned_staff or [])
             if new_emp not in assigned:
                 assigned.append(new_emp)
             shift.assigned_staff = assigned
-            # Auto-flip status if required_staff now reached
             if len(assigned) >= (shift.required_staff or 1) and shift.status in ("open", "draft"):
                 shift.status = "active"
 
-    if "date" in payload and payload["date"]:
+    if "date" in update_data and update_data["date"]:
         try:
-            sh = int(payload.get("start_hour", shift.start_hour or 9))
-            # Parse the date string and create UTC-aware datetime
-            date_str = payload['date']
-            date_parts = date_str.split('-')
+            sh = int(update_data.get("start_hour", shift.start_hour or 9))
+            date_parts = update_data["date"].split('-')
             year, month, day = int(date_parts[0]), int(date_parts[1]), int(date_parts[2])
             start_dt = datetime(year, month, day, sh, 0, 0, tzinfo=timezone.utc)
             shift.start_time = start_dt
             shift.end_time = start_dt + timedelta(hours=shift.duration_hours or 8)
             shift.start_hour = sh
         except (ValueError, IndexError) as e:
-            logger.error(f"Failed to parse date/time in update: {payload.get('date')} {payload.get('start_hour')} - {e}")
+            logger.error("failed_to_parse_shift_date", date=update_data["date"], error=str(e))
             raise HTTPException(status_code=400, detail="Invalid date")
 
     shift.updated_at = datetime.now(timezone.utc)
@@ -297,7 +340,7 @@ async def delete_shift(request: Request, shift_id: str, db: Session = Depends(ge
 
 
 @router.post("/{shift_id}/unassign")
-async def unassign_shift(request: Request, shift_id: str, payload: dict,
+async def unassign_shift(request: Request, shift_id: str, payload: AssignPayload,
                          db: Session = Depends(get_db)):
     """Remove an employee from a shift. Admin only."""
     user = await get_current_user(request, db)
@@ -309,10 +352,7 @@ async def unassign_shift(request: Request, shift_id: str, payload: dict,
     if not shift:
         raise HTTPException(status_code=404, detail="Shift not found")
 
-    employee_id = payload.get("employee_id")
-    if not employee_id:
-        raise HTTPException(status_code=400, detail="employee_id required")
-
+    employee_id = payload.employee_id
     assigned = list(shift.assigned_staff or [])
     if employee_id in assigned:
         assigned.remove(employee_id)
@@ -335,7 +375,7 @@ async def unassign_shift(request: Request, shift_id: str, payload: dict,
 
 
 @router.post("/{shift_id}/assign")
-async def assign_shift(request: Request, shift_id: str, payload: dict,
+async def assign_shift(request: Request, shift_id: str, payload: AssignPayload,
                        db: Session = Depends(get_db)):
     """Assign an employee to a shift. Employees can self-assign to open shifts."""
     user = await get_current_user(request, db)
@@ -345,9 +385,7 @@ async def assign_shift(request: Request, shift_id: str, payload: dict,
     if not shift:
         raise HTTPException(status_code=404, detail="Shift not found")
 
-    employee_id = payload.get("employee_id")
-    if not employee_id:
-        raise HTTPException(status_code=400, detail="employee_id required")
+    employee_id = payload.employee_id
     emp = db.query(User).filter(
         User.id == employee_id, User.org_id == user.org_id
     ).first()
@@ -368,18 +406,17 @@ async def assign_shift(request: Request, shift_id: str, payload: dict,
 
 
 @router.post("/{shift_id}/check-in")
-async def check_in(request: Request, shift_id: str, payload: dict = None,
+async def check_in(request: Request, shift_id: str, payload: CheckInPayload | None = None,
                    db: Session = Depends(get_db)):
     """Employee records the start of a shift they are working."""
     user = await get_current_user(request, db)
-    payload = payload or {}
+    payload = payload or CheckInPayload()
     shift = db.query(Shift).filter(
         Shift.id == shift_id, Shift.org_id == user.org_id
     ).first()
     if not shift:
         raise HTTPException(status_code=404, detail="Shift not found")
 
-    # The employee must be assigned to the shift
     assigned = list(shift.assigned_staff or [])
     if user.id not in assigned and shift.employee_id != user.id and user.role != "admin":
         raise HTTPException(
@@ -394,7 +431,7 @@ async def check_in(request: Request, shift_id: str, payload: dict = None,
         )
 
     shift.check_in_at = datetime.now(timezone.utc)
-    shift.check_in_notes = (payload.get("notes") or "")[:500] or None
+    shift.check_in_notes = (payload.notes or "")[:500] or None
     shift.status = "active"
     shift.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -403,11 +440,11 @@ async def check_in(request: Request, shift_id: str, payload: dict = None,
 
 
 @router.post("/{shift_id}/check-out")
-async def check_out(request: Request, shift_id: str, payload: dict = None,
+async def check_out(request: Request, shift_id: str, payload: CheckOutPayload | None = None,
                     db: Session = Depends(get_db)):
     """Employee records the end of a shift they are working."""
     user = await get_current_user(request, db)
-    payload = payload or {}
+    payload = payload or CheckOutPayload()
     shift = db.query(Shift).filter(
         Shift.id == shift_id, Shift.org_id == user.org_id
     ).first()
@@ -433,10 +470,9 @@ async def check_out(request: Request, shift_id: str, payload: dict = None,
         )
 
     shift.check_out_at = datetime.now(timezone.utc)
-    if payload.get("notes"):
-        # Append any checkout notes to the existing field
+    if payload.notes:
         existing = shift.check_in_notes or ""
-        shift.check_in_notes = (existing + f"\n[out] {payload['notes']}"[:500]) or None
+        shift.check_in_notes = (existing + f"\n[out] {payload.notes}"[:500]) or None
     shift.status = "completed"
     shift.updated_at = datetime.now(timezone.utc)
     db.commit()

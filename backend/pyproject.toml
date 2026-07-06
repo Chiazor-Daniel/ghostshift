@@ -1,0 +1,26 @@
+[project]
+name = "ghostshift-backend"
+version = "2.0.0"
+description = "Healthcare Workforce Scheduling Platform"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
+
+[tool.coverage.run]
+source = ["."]
+omit = ["tests/*", "venv/*", "migrations/*"]

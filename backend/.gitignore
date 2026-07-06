@@ -56,8 +56,7 @@ Thumbs.db
 uploads/
 *.upload
 
-# Test files
-tests/
+# Test artifacts (not the tests themselves)
 *.test.py
 *.spec.py
 __tests__/
