@@ -128,9 +128,8 @@ def _generate_password() -> str:
 def create_users(db) -> dict:
     """Returns {name: user_row}."""
     out = {}
-    # Generate a unique password per demo run so testers/professors do not all share one.
-    admin_password = _generate_password()
-    employee_password = _generate_password()
+    admin_password = PASSWORD
+    employee_password = PASSWORD
     for (name, role, title, dept, hours, burnout, trend) in EMPLOYEES:
         # Build email
         if role == "admin":
