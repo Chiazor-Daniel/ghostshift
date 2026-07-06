@@ -85,7 +85,7 @@ app.add_middleware(
 
 app.add_middleware(
     RateLimitMiddleware,
-    max_requests=int(os.getenv("RATE_LIMIT_MAX", "100")),
+    max_requests=int(os.getenv("RATE_LIMIT_MAX", "500")),
     window_seconds=int(os.getenv("RATE_LIMIT_WINDOW", "60")),
 )
 
