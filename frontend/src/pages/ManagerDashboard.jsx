@@ -92,6 +92,9 @@ export default function ManagerDashboard() {
   const coverageData = useMemo(() => {
     const filled = filteredShifts.filter((s) => !isShiftOpen(s)).length
     const open = openShiftCount
+    if (filled === 0 && open === 0) {
+      return [{ name: 'No data', value: 1, color: '#94a3b8' }]
+    }
     return [
       { name: 'Filled', value: filled, color: '#22c55e' },
       { name: 'Open', value: open, color: '#ef4444' },
@@ -222,30 +225,26 @@ export default function ManagerDashboard() {
           <div className="lg:col-span-4">
             <Card hover={false}>
               <CardHeader icon="donut_large" title="Coverage" subtitle="Filled vs open" />
-              {coverageData.some((d) => d.value > 0) ? (
-                <div className="h-56">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={coverageData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" startAngle={90} endAngle={-270}>
-                        {coverageData.map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <div className="h-56 flex items-center justify-center text-on-surface-variant text-sm">No shift data yet</div>
-              )}
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={coverageData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" startAngle={90} endAngle={-270}>
+                      {coverageData.map((entry, i) => (
+                        <Cell key={i} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             </Card>
           </div>
           <div className="lg:col-span-8">
             <Card hover={false}>
               <CardHeader icon="bar_chart" title="By department" subtitle="Filled vs open per department" />
-              {deptCoverage.length > 0 ? (
-                <div className="h-56 overflow-y-auto space-y-3 px-1">
-                  {deptCoverage.map((d) => {
+              <div className="h-56 overflow-y-auto space-y-3 px-1">
+                {deptCoverage.length > 0 ? (
+                  deptCoverage.map((d) => {
                     const total = d.filled + d.open
                     const pct = total > 0 ? Math.round((d.filled / total) * 100) : 0
                     return (
@@ -259,11 +258,11 @@ export default function ManagerDashboard() {
                         </div>
                       </div>
                     )
-                  })}
-                </div>
-              ) : (
-                <div className="h-56 flex items-center justify-center text-on-surface-variant text-sm">No department data yet</div>
-              )}
+                  })
+                ) : (
+                  <div className="h-full flex items-center justify-center text-on-surface-variant text-sm">No department data yet</div>
+                )}
+              </div>
             </Card>
           </div>
         </div>
