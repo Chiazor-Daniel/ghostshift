@@ -222,40 +222,48 @@ export default function ManagerDashboard() {
           <div className="lg:col-span-4">
             <Card hover={false}>
               <CardHeader icon="donut_large" title="Coverage" subtitle="Filled vs open" />
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={coverageData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" startAngle={90} endAngle={-270}>
-                      {coverageData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
+              {coverageData.some((d) => d.value > 0) ? (
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={coverageData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" startAngle={90} endAngle={-270}>
+                        {coverageData.map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-56 flex items-center justify-center text-on-surface-variant text-sm">No shift data yet</div>
+              )}
             </Card>
           </div>
           <div className="lg:col-span-8">
             <Card hover={false}>
               <CardHeader icon="bar_chart" title="By department" subtitle="Filled vs open per department" />
-              <div className="h-56 overflow-y-auto space-y-3 px-1">
-                {deptCoverage.map((d) => {
-                  const total = d.filled + d.open
-                  const pct = total > 0 ? Math.round((d.filled / total) * 100) : 0
-                  return (
-                    <div key={d.department}>
-                      <div className="flex items-center justify-between text-sm mb-1">
-                        <span className="font-medium text-on-surface">{d.department}</span>
-                        <span className="text-on-surface-variant">{d.filled}/{total} ({pct}%)</span>
+              {deptCoverage.length > 0 ? (
+                <div className="h-56 overflow-y-auto space-y-3 px-1">
+                  {deptCoverage.map((d) => {
+                    const total = d.filled + d.open
+                    const pct = total > 0 ? Math.round((d.filled / total) * 100) : 0
+                    return (
+                      <div key={d.department}>
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="font-medium text-on-surface">{d.department}</span>
+                          <span className="text-on-surface-variant">{d.filled}/{total} ({pct}%)</span>
+                        </div>
+                        <div className="w-full h-2 bg-surface-container rounded-full overflow-hidden">
+                          <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+                        </div>
                       </div>
-                      <div className="w-full h-2 bg-surface-container rounded-full overflow-hidden">
-                        <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="h-56 flex items-center justify-center text-on-surface-variant text-sm">No department data yet</div>
+              )}
             </Card>
           </div>
         </div>
