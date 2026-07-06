@@ -40,19 +40,6 @@ python -m pytest tests/ -v
 
 All tests use an isolated in-memory SQLite database — no external services needed.
 
-### What's Tested
-
-| Module | Tests | Covers |
-|---|---|---|
-| Auth | 8 | login, registration, permissions, JWT |
-| Shifts | 8 | CRUD, assign, check-in/out, validation |
-| Health | 5 | health check, docs, schema |
-| Circuit Breaker | 6 | state machine, recovery, async |
-| Rate Limiting | 2 | normal flow, exceeded threshold |
-| Property-based | 4 | hypothesis tests for payloads, tokens, retry |
-
-**36 tests total.**
-
 ## Environment
 
 Copy the example config and adjust if needed:
