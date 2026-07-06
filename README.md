@@ -40,6 +40,17 @@ python -m pytest tests/ -v
 
 All tests use an isolated in-memory SQLite database — no external services needed.
 
+## Demo Accounts
+
+On first startup, the app seeds a demo organization (Riverside General Hospital) with 14 employees, shifts, swap requests, leave requests, and notifications.
+
+| Role | Email | Password |
+|---|---|---|
+| Admin | `demo.admin@riverside.health` | `Demo1234!` |
+| Employee | `demo.employee@riverside.health` | `Demo1234!` |
+
+Use the demo login buttons on the login page, or enter the credentials manually.
+
 ## Environment
 
 Copy the example config and adjust if needed:
