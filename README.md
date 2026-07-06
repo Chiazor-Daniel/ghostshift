@@ -52,11 +52,10 @@ The defaults work with Docker Compose out of the box.
 
 ## Key Features
 
-- **JWT Authentication** — role-based access (admin / employee)
-- **Structured Logging** — JSON output with correlation IDs
-- **Input Validation** — Pydantic models on all endpoints
-- **Error Handling** — typed exceptions, centralized handler
-- **Fault Tolerance** — retry with backoff, circuit breaker, rate limiter
-- **CI Pipeline** — lint (ruff, ESLint) + test (pytest, hypothesis)
+- **Shift Marketplace** — browse, swap, and pick up open shifts with one click
+- **AI-Powered Insights** — burnout risk detection, coverage analysis, scheduling recommendations
+- **Role-Based Dashboards** — tailored views for admins, managers, and employees
+- **Smart Scheduling** — auto-conflict detection, availability matching, fair hour distribution
+- **Real-Time Notifications** — instant alerts for swaps, approvals, and urgent coverage gaps
 
 
