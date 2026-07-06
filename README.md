@@ -72,16 +72,4 @@ The defaults work with Docker Compose out of the box.
 - **Fault Tolerance** — retry with backoff, circuit breaker, rate limiter
 - **CI Pipeline** — lint (ruff, ESLint) + test (pytest, hypothesis)
 
-## Course Rubric Alignment
 
-| Criterion | Level | Implementation |
-|---|---|---|
-| Dev Environment | Excellent | Git, Docker, CI/CD, pre-commit hooks |
-| Testing | Excellent | 44 tests including property-based, CI with coverage |
-| Configuration | Advanced | Dev/Stage configs, env variables |
-| Logging | Advanced | structlog, JSON, correlation IDs |
-| Deployment | Advanced | Docker Compose, modular architecture |
-| Input Validation | Advanced+ | Pydantic, rate limiting, parameterized queries |
-| Error Handling | Advanced+ | Centralized handler, typed exceptions, circuit breaker |
-| Auth | Advanced+ | JWT, RBAC, rate-limited endpoints |
-| Fault Tolerance | Advanced | Retry with backoff, circuit breaker |
