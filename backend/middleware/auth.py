@@ -71,6 +71,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
+def decode_token(token: str) -> dict:
+    """Decode and verify a JWT token. Returns the payload dict."""
+    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+
 def create_refresh_token(data: dict) -> str:
     """Create a JWT refresh token."""
     to_encode = data.copy()

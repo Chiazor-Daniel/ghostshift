@@ -16,7 +16,6 @@ import MarketplacePage from './pages/MarketplacePage.jsx'
 import SwapRequestsPage from './pages/SwapRequestsPage.jsx'
 import AvailabilityPage from './pages/AvailabilityPage.jsx'
 import InsightsPage from './pages/InsightsPage.jsx'
-import HealthDashboard from './pages/HealthDashboard.jsx'
 import EmployeesPage from './pages/EmployeesPage.jsx'
 import AdminPage from './pages/AdminPage.jsx'
 import NotificationsPage from './pages/NotificationsPage.jsx'
@@ -89,7 +88,6 @@ export default function App() {
     notifications: ['employee', 'admin'],
     leaves: ['employee', 'admin'],
     attendance: ['admin'],
-    health: ['employee', 'admin'],
   }
 
   return (
@@ -124,7 +122,6 @@ export default function App() {
                   <Route path="notifications" element={<GuardedRoute roles={routeRoles.notifications} activeRole={activeRole}><NotificationsPage /></GuardedRoute>} />
                   <Route path="leaves" element={<GuardedRoute roles={routeRoles.leaves} activeRole={activeRole}><LeaveRequestsPage /></GuardedRoute>} />
                   <Route path="attendance" element={<GuardedRoute roles={routeRoles.attendance} activeRole={activeRole}><AttendancePage /></GuardedRoute>} />
-                  <Route path="health" element={<GuardedRoute roles={routeRoles.health} activeRole={activeRole}><HealthDashboard /></GuardedRoute>} />
                   <Route path="assistant" element={<Navigate to="/app/dashboard" replace />} />
                   <Route path="support" element={<Navigate to="/app/dashboard" replace />} />
                 </Routes>

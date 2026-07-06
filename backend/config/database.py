@@ -34,9 +34,10 @@ engine = create_engine(
 
 @event.listens_for(engine, "connect")
 def set_timezone(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("SET timezone TO 'UTC'")
-    cursor.close()
+    if engine.dialect.name == "postgresql":
+        cursor = dbapi_connection.cursor()
+        cursor.execute("SET timezone TO 'UTC'")
+        cursor.close()
 
 # Create session
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

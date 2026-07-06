@@ -52,6 +52,21 @@ class TestShifts:
         assert response.status_code == 403
 
     def test_assign_shift(self, client, auth_headers, db_session):
+        from models.user import User
+        from middleware.auth import hash_password
+        emp = User(
+            id="emp-test-1",
+            org_id="org-test-1",
+            email="emp@test.com",
+            name="Test Employee",
+            role="employee",
+            password_hash=hash_password("password123"),
+            department="Emergency",
+            status="active",
+        )
+        db_session.add(emp)
+        db_session.commit()
+
         shift_resp = client.post("/api/shifts/", json={
             "title": "Assignable Shift",
             "department": "Emergency",
@@ -69,24 +84,23 @@ class TestShifts:
         data = response.json()
         assert data["employee_id"] == "emp-test-1"
 
-    def test_check_in_out_flow(self, client, employee_headers, db_session):
+    def test_check_in_out_flow(self, client, employee_headers, auth_headers, db_session):
         from models.user import User
         from middleware.auth import create_access_token
         emp = User(
             id="checkin-test-1",
             org_id="org-test-1",
             email="checkin@test.com",
-            full_name="Checkin Test",
+            name="Checkin Test",
             role="employee",
             password_hash="skip",
             department="Emergency",
-            is_active=True,
+            status="active",
         )
         db_session.add(emp)
         db_session.commit()
         token = create_access_token({"user_id": emp.id, "org_id": emp.org_id, "role": "employee", "email": emp.email})
         emp_headers = {"Authorization": f"Bearer {token}"}
-
         shift_resp = client.post("/api/shifts/", json={
             "title": "Checkin Shift",
             "department": "Emergency",
@@ -94,7 +108,7 @@ class TestShifts:
             "start_hour": 8,
             "employee_id": "checkin-test-1",
             "assigned_staff": ["checkin-test-1"],
-        }, headers=auth_headers := {"Authorization": f"Bearer {token}"})
+        }, headers=auth_headers)
         shift_id = shift_resp.json()["id"]
 
         checkin = client.post(f"/api/shifts/{shift_id}/check-in", json={}, headers=emp_headers)

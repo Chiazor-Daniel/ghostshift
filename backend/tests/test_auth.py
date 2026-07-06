@@ -17,11 +17,11 @@ class TestAuth:
             id="auth-test-1",
             org_id="org-test-1",
             email="logintest@test.com",
-            full_name="Login Test",
+            name="Login Test",
             role="employee",
             password_hash=hash_password("correctpassword"),
             department="ICU",
-            is_active=True,
+            status="active",
         )
         db_session.add(user)
         db_session.commit()
@@ -39,11 +39,11 @@ class TestAuth:
             id="auth-test-2",
             org_id="org-test-1",
             email="success@test.com",
-            full_name="Success Test",
+            name="Success Test",
             role="employee",
             password_hash=hash_password("password123"),
             department="ICU",
-            is_active=True,
+            status="active",
         )
         db_session.add(user)
         db_session.commit()
@@ -66,7 +66,7 @@ class TestAuth:
         response = client.post("/api/auth/register", json={
             "email": "new@test.com",
             "password": "short",
-            "full_name": "New User",
+            "name": "New User",
         })
         assert response.status_code == 422
 

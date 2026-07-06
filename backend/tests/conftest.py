@@ -3,6 +3,7 @@ import os
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -12,6 +13,8 @@ os.environ["CORS_ORIGINS"] = "http://localhost:5173"
 os.environ["DEBUG"] = "false"
 os.environ["LOG_LEVEL"] = "CRITICAL"
 os.environ["SEED_DEMO"] = "false"
+os.environ["RATE_LIMIT_MAX"] = "10000"
+os.environ["RATE_LIMIT_WINDOW"] = "60"
 
 from config.database import Base, get_db
 from main import app
@@ -19,23 +22,16 @@ from config.logging import setup_logging
 setup_logging()
 
 
-@pytest.fixture(scope="session")
-def test_engine():
-    engine = create_engine("sqlite:///./test.db", echo=False)
-    Base.metadata.create_all(bind=engine)
-    yield engine
-    Base.metadata.drop_all(bind=engine)
-    os.remove("./test.db")
-
-
 @pytest.fixture
-def db_session(test_engine):
-    Session = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+def db_session():
+    engine = create_engine("sqlite://", echo=False, connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    from models import user, organization, shift, swap, leave, availability, notification, audit, invite, attendance, cert_alert, peak_risk
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session = Session()
     try:
         yield session
     finally:
-        session.rollback()
         session.close()
 
 
@@ -68,11 +64,11 @@ def admin_token(db_session):
         id="admin-test-1",
         org_id="org-test-1",
         email="admin@test.com",
-        full_name="Test Admin",
+        name="Test Admin",
         role="admin",
         password_hash=hash_password("password123"),
         department="Emergency",
-        is_active=True,
+        status="active",
     )
     db_session.add(admin)
     db_session.commit()
@@ -89,11 +85,11 @@ def employee_token(db_session):
         id="emp-test-1",
         org_id="org-test-1",
         email="emp@test.com",
-        full_name="Test Employee",
+        name="Test Employee",
         role="employee",
         password_hash=hash_password("password123"),
         department="Emergency",
-        is_active=True,
+        status="active",
     )
     db_session.add(emp)
     db_session.commit()

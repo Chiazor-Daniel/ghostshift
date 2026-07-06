@@ -91,6 +91,8 @@ async def list_employees(
 ):
     """Return users in the org (admins + employees) with pagination."""
     user = await get_current_user(request, db)
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
     skip = max(0, skip)
     limit = max(1, min(limit, 200))
     rows = db.query(User).filter(User.org_id == user.org_id).order_by(User.role, User.name).offset(skip).limit(limit).all()

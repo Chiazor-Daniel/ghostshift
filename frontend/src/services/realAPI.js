@@ -334,14 +334,6 @@ class RealAPI {
   async scheduleOptimization(payload) { return this._request('/integrations/ai/schedule-optimization', { method: 'POST', body: JSON.stringify(payload) }) }
   async integrationsStatus() { return this._request('/integrations/status') }
 
-  // ── FHIR ───────────────────────────────────────────────────
-  async getFHIRPatient(patientId) { return this._request(`/fhir/Patient/${patientId}`) }
-  async getFHIRPatientEverything(patientId) { return this._request(`/fhir/Patient/${patientId}/$everything`) }
-  async getFHIRPatientObservations(patientId, metric) {
-    const q = metric ? `?metric=${metric}` : ''
-    return this._request(`/fhir/Patient/${patientId}/observations${q}`)
-  }
-  async getFHIRMetrics() { return this._request('/fhir/metrics') }
 }
 
 export const realAPI = new RealAPI()
