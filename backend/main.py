@@ -29,11 +29,19 @@ except Exception:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting GhostShift Backend...")
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created/verified")
-    except Exception as e:
-        logger.error(f"Error creating database tables: {e}")
+
+    import time
+    for attempt in range(10):
+        try:
+            Base.metadata.create_all(bind=engine)
+            logger.info("Database tables created/verified")
+            break
+        except Exception as e:
+            logger.warning(f"Database not ready (attempt {attempt + 1}/10): {e}")
+            if attempt < 9:
+                time.sleep(3)
+    else:
+        logger.error("Could not connect to database after 10 attempts")
 
     if os.getenv("SEED_DEMO", "true").lower() in ("1", "true", "yes"):
         try:
