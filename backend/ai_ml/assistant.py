@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 class AIAssistant:
     def __init__(self):
         # Try Groq first (free tier, very fast)
-        self.groq_api_key = os.getenv("GROQ_API_KEY")
+        _raw_key = (os.getenv("GROQ_KEY_A", "") + os.getenv("GROQ_KEY_B", "")) or os.getenv("GROQ_API_KEY", "")
+        self.groq_api_key = _raw_key or None
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.ollama_api_key = os.getenv("OLLAMA_API_KEY")
         
