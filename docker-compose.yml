@@ -29,7 +29,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    env_file: ./backend/.env
     environment:
       DEBUG: "true"
       LOG_LEVEL: "DEBUG"
@@ -37,6 +36,13 @@ services:
       DATABASE_HOST: "postgres"
       DATABASE_PORT: "5432"
       CORS_ORIGINS: "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"
+      REDIS_URL: "redis://redis:6379/0"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      RATE_LIMIT_MAX: "500"
+      RATE_LIMIT_WINDOW: "60"
+      SEED_DEMO: "true"
+      JWT_SECRET: "df6f2a3e12905da0ba69355ed28551e0c35ba7b0cccd2f7fc641ad3cfd870606"
     command: >
       sh -c "uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
     ports:

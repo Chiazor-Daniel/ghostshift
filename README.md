@@ -53,13 +53,11 @@ Use the demo login buttons on the login page, or enter the credentials manually.
 
 ## Environment
 
-Copy the example config and adjust if needed:
+All defaults are baked into `docker-compose.yml` — no `.env` file needed. Just clone and run:
 
 ```bash
-cp backend/.env.example backend/.env
+docker compose up -d
 ```
-
-The defaults work with Docker Compose out of the box.
 
 ## Key Features
 
